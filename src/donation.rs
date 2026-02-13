@@ -1,3 +1,5 @@
+use http::Request;
+use isahc::prelude::*;
 use log::{error, info};
 use serde::Serialize;
 use thiserror::Error;
@@ -5,9 +7,15 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum DonationError {
     #[error("HTTP request failed: {0}")]
-    RequestError(#[from] reqwest::Error),
+    RequestError(#[from] isahc::Error),
+    #[error("HTTP error: {0}")]
+    HttpError(#[from] http::Error),
+    #[error("I/O error: {0}")]
+    IoError(#[from] std::io::Error),
     #[error("API returned error status {status}: {message}")]
     ApiError { status: u16, message: String },
+    #[error("HTTP request json failed: {0}")]
+    JsonError(#[from] serde_json::Error),
 }
 
 #[derive(Debug, Serialize)]
@@ -19,8 +27,8 @@ struct DonationRequest {
     post_chat: String,
 }
 
-/// Sends a donation to the API
-pub fn send_donation(
+/// Sends a donation to the API asynchronously
+pub async fn send_donation(
     token: &str,
     fund_id: i32,
     username: &str,
@@ -40,21 +48,21 @@ pub fn send_donation(
         amount, username, fund_id
     );
 
-    let client = reqwest::blocking::Client::new();
-    let response = client
-        .post(&url)
+    let body = serde_json::to_vec(&request_body)?;
+
+    let request = Request::post(&url)
         .header("Authorization", format!("Bearer {}", token))
-        .json(&request_body)
-        .send()?;
+        .header("Content-Type", "application/json")
+        .body(body)?;
+
+    let mut response = isahc::send_async(request).await?;
 
     let status = response.status();
     if status.is_success() {
         info!("✅ Donation sent successfully!");
         Ok(())
     } else {
-        let message = response
-            .text()
-            .unwrap_or_else(|_| "Unknown error".to_string());
+        let message = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
         error!("❌ API error {}: {}", status.as_u16(), message);
         Err(DonationError::ApiError {
             status: status.as_u16(),
