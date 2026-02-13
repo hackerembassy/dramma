@@ -2,21 +2,8 @@ use http::Request;
 use isahc::prelude::*;
 use log::{error, info};
 use serde::Serialize;
-use thiserror::Error;
 
-#[derive(Debug, Error)]
-pub enum DonationError {
-    #[error("HTTP request failed: {0}")]
-    RequestError(#[from] isahc::Error),
-    #[error("HTTP error: {0}")]
-    HttpError(#[from] http::Error),
-    #[error("I/O error: {0}")]
-    IoError(#[from] std::io::Error),
-    #[error("API returned error status {status}: {message}")]
-    ApiError { status: u16, message: String },
-    #[error("HTTP request json failed: {0}")]
-    JsonError(#[from] serde_json::Error),
-}
+use crate::error::RequestError;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -33,7 +20,7 @@ pub async fn send_donation(
     fund_id: i32,
     username: &str,
     amount: i32,
-) -> Result<(), DonationError> {
+) -> Result<(), RequestError> {
     let url = format!("https://gateway.hackem.cc/api/funds/{}/donations", fund_id);
 
     let request_body = DonationRequest {
@@ -62,9 +49,12 @@ pub async fn send_donation(
         info!("✅ Donation sent successfully!");
         Ok(())
     } else {
-        let message = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        let message = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
         error!("❌ API error {}: {}", status.as_u16(), message);
-        Err(DonationError::ApiError {
+        Err(RequestError::Api {
             status: status.as_u16(),
             message,
         })

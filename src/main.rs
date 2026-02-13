@@ -6,6 +6,7 @@ slint::include_modules!();
 mod cashcode;
 mod config;
 mod donation;
+mod error;
 mod funds;
 mod home_assistant;
 
@@ -285,10 +286,12 @@ mod fund_fetcher {
                                 error!("❌ Failed to fetch funds: {}", e);
                                 app.set_available_funds(slint::ModelRc::new(slint::VecModel::<
                                     slint::SharedString,
-                                >::default()));
+                                >::default(
+                                )));
                                 app.set_available_fund_ids(slint::ModelRc::new(slint::VecModel::<
                                     i32,
-                                >::default()));
+                                >::default(
+                                )));
                             }
                         }
                     })
@@ -297,7 +300,8 @@ mod fund_fetcher {
                     warn!("⚠️  No token loaded, cannot fetch funds");
                     app_handle.set_available_funds(slint::ModelRc::new(slint::VecModel::<
                         slint::SharedString,
-                    >::default()));
+                    >::default(
+                    )));
                     app_handle.set_available_fund_ids(slint::ModelRc::new(
                         slint::VecModel::<i32>::default(),
                     ));
