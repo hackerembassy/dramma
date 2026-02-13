@@ -1,0 +1,108 @@
+import { VirtualKeyboardHandler, VirtualKeyboard, KeyModel } from "virtual_keyboard.slint";
+
+import { Main } from "pages/main.slint";
+import { Donate } from "pages/donate.slint";
+import { InsertMoney } from "pages/insert_money.slint";
+import { HomeAssistant } from "pages/home_assistant.slint";
+
+export { VirtualKeyboardHandler, KeyModel }
+
+enum Page {
+    Main,
+    Donate,
+    InsertMoney,
+    HomeAssistant,
+    Top,
+    Games
+}
+
+export component MainWindow inherits Window {
+    property <Page> current-page: Page.Main;
+    in-out property <int> session-amount: 0;
+    in-out property <string> session-username: "";
+    in-out property <int> session-fund-id: 0;
+    
+    // data storage
+    in-out property <[string]> available-funds: [];
+    in-out property <[int]> available-fund-ids: [];
+
+    // callbacks for rust to hook into
+    callback done-clicked(string, int, int);  // username, fund_id, amount
+    callback start-accepting-money();
+    callback stop-accepting-money();
+    callback show-home-assistant();
+    callback hide-home-assistant();
+    callback fetch-funds();  // fetches available-funds and available-fund-ids
+
+    title: "Donation Machine";
+    width: 1280px;
+    height: 1024px;
+
+    Rectangle {
+        if current-page == Page.Main: Main {
+            donate-clicked => {
+                root.current-page = Page.Donate;
+            }
+            
+            home-assistant-clicked => {
+                root.show-home-assistant();
+                root.current-page = Page.HomeAssistant;
+            }
+        }
+        if current-page == Page.Donate: Donate {
+            fund-items: root.available-funds;
+            fund-ids: root.available-fund-ids;
+            
+            fetch-funds => {
+                root.fetch-funds();
+            }
+            
+            back-clicked => {
+                VirtualKeyboardHandler.open = false;
+                root.current-page = Page.Main;
+            }
+            
+            next-clicked(username, fund-id) => {
+                debug("proceed with username:", username, "fund:", fund-id);
+                VirtualKeyboardHandler.open = false;
+                root.session-username = username;
+                root.session-fund-id = fund-id;
+                root.session-amount = 0;  // reset session amount
+                root.start-accepting-money();  // enable bill acceptor
+                root.current-page = Page.InsertMoney;
+            }
+        }
+        if current-page == Page.InsertMoney: InsertMoney {
+            current-amount: root.session-amount;
+            username: root.session-username;
+            
+            cancel-clicked => {
+                root.stop-accepting-money();  // disable bill acceptor
+                root.session-amount = 0;
+                root.session-username = "";
+                root.current-page = Page.Donate;
+            }
+            
+            done-clicked(username, amount) => {
+                debug("done with username:", username, "amount:", amount, "fund:", root.session-fund-id);
+                root.stop-accepting-money();  // disable bill acceptor
+                // call the root callback so rust can handle the donation
+                root.done-clicked(username, root.session-fund-id, amount);
+                root.session-amount = 0;
+                root.session-username = "";
+                root.session-fund-id = 0;
+                root.current-page = Page.Main;
+            }
+        }
+        if current-page == Page.HomeAssistant: HomeAssistant {
+            back-clicked => {
+                root.hide-home-assistant();
+                root.current-page = Page.Main;
+            }
+        }
+
+        keyboard := VirtualKeyboard {
+            y: TextInputInterface.text-input-focused && VirtualKeyboardHandler.open ? parent.height - self.height : parent.height;
+        }
+    }
+}

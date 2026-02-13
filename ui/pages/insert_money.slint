@@ -1,0 +1,120 @@
+import { Button, Palette } from "std-widgets.slint";
+
+export component InsertMoney inherits Rectangle {
+    in-out property <int> current-amount: 0;
+    in property <string> username: "";
+    
+    callback cancel-clicked();
+    callback done-clicked(string, int);  // username, amount
+    
+    background: Palette.background;
+    
+    VerticalLayout {
+        alignment: start;
+        padding: 32px;
+        spacing: 32px;
+        
+        HorizontalLayout {
+            alignment: start;
+            
+            Button {
+                text: "← Cancel";
+                width: 150px;
+                height: 60px;
+                enabled: root.current-amount == 0;
+                
+                clicked => {
+                    root.cancel-clicked();
+                }
+            }
+        }
+        
+        // header
+        Text {
+            text: "Please Insert Money";
+            font-size: 36px;
+            font-weight: 700;
+            color: Palette.foreground;
+            horizontal-alignment: center;
+        }
+        
+        // spacer
+        Rectangle {
+            height: 60px;
+        }
+        
+        // amount display
+        VerticalLayout {
+            spacing: 16px;
+            alignment: center;
+            
+            Text {
+                text: "Inserted Amount:";
+                font-size: 24px;
+                color: Palette.foreground;
+                horizontal-alignment: center;
+                opacity: 0.8;
+            }
+            
+            Rectangle {
+                height: 120px;
+                border-radius: 16px;
+                background: Palette.color-scheme == ColorScheme.dark ? #2a2a2a : #f5f5f5;
+                border-width: 3px;
+                border-color: root.current-amount > 0 ? #4CAF50 : #cccccc;
+                
+                HorizontalLayout {
+                    alignment: center;
+                    
+                    Text {
+                        text: root.current-amount + " ֏";
+                        font-size: 64px;
+                        font-weight: 700;
+                        color: root.current-amount > 0 ? #4CAF50 : Palette.foreground;
+                        horizontal-alignment: center;
+                    }
+                }
+            }
+        }
+        
+        // instructions
+        Text {
+            text: "Insert bills into me";
+            font-size: 18px;
+            color: Palette.foreground;
+            horizontal-alignment: center;
+            opacity: 0.7;
+        }
+        
+        // spacer to push button to bottom
+        Rectangle {
+            vertical-stretch: 1;
+        }
+        
+        // done button
+        HorizontalLayout {
+            alignment: center;
+            
+            done-button := Button {
+                text: "Done ✓";
+                primary: true;
+                enabled: root.current-amount > 0;
+                width: 350px;
+                height: 120px;
+                
+                clicked => {
+                    root.done-clicked(root.username, root.current-amount);
+                }
+            }
+        }
+        
+        // status text
+        if root.current-amount == 0 : Text {
+            text: "Done button will be enabled after inserting money";
+            font-size: 14px;
+            color: Palette.foreground;
+            horizontal-alignment: center;
+            opacity: 0.6;
+        }
+    }
+}

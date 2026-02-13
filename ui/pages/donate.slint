@@ -1,0 +1,139 @@
+import { LineEdit, Button, Palette, ComboBox } from "std-widgets.slint";
+import { VirtualKeyboardHandler } from "../virtual_keyboard.slint";
+
+export component Donate inherits Rectangle {
+    in-out property <string> username: "";
+    in property <[string]> fund-items: [];
+    in property <[int]> fund-ids: [];
+    in-out property <int> selected-fund-index: -1;
+
+    callback fetch-funds();
+
+    init => {
+        VirtualKeyboardHandler.open = true;
+        username-input.focus();
+        
+        // fetch funds from backend
+        root.fetch-funds();
+        
+        // select first fund by default if available
+        if (root.fund-items.length > 0) {
+            root.selected-fund-index = 0;
+        }
+    }
+    
+    
+    callback next-clicked(string, int);  // username, fund_id
+    callback back-clicked();
+    
+    background: Palette.background;
+    
+    VerticalLayout {
+        alignment: start;
+        padding: 32px;
+        spacing: 24px;
+        
+        // back button
+        HorizontalLayout {
+            alignment: start;
+            
+            Button {
+                text: "← Back";
+                width: 150px;
+                height: 60px;
+                
+                clicked => {
+                    root.back-clicked();
+                }
+            }
+        }
+        
+        // header
+        Text {
+            text: "Make a Donation";
+            font-size: 32px;
+            font-weight: 700;
+            color: Palette.foreground;
+            horizontal-alignment: center;
+        }
+        
+        // spacer
+        Rectangle {
+            height: 20px;
+        }
+        
+        // fund selector section
+        VerticalLayout {
+            spacing: 12px;
+            
+            Text {
+                text: "Select fund:";
+                font-size: 18px;
+                color: Palette.foreground;
+                horizontal-alignment: left;
+            }
+            
+            fund-selector := ComboBox {
+                model: root.fund-items;
+                current-index <=> root.selected-fund-index;
+                enabled: root.fund-items.length > 0;
+                height: 60px;
+            }
+        }
+        
+        // username input section
+        VerticalLayout {
+            spacing: 12px;
+            
+            Text {
+                text: "Enter your username:";
+                font-size: 18px;
+                color: Palette.foreground;
+                horizontal-alignment: left;
+            }
+            
+            Rectangle {
+                height: 60px;
+                border-radius: 8px;
+                border-width: 2px;
+                border-color: username-input.has-focus ? #4a90e2 : #cccccc;
+                background: Palette.color-scheme == ColorScheme.dark ? #2a2a2a : #ffffff;
+                
+                username-input := LineEdit {
+                    width: 100%;
+                    height: 100%;
+                    text <=> root.username;
+                    placeholder-text: "username";
+                    font-size: 20px;
+                    horizontal-alignment: left;
+                }
+            }
+        }
+        
+        // spacer to push button to bottom
+        Rectangle {
+            vertical-stretch: 1;
+        }
+        
+        // next button
+        HorizontalLayout {
+            alignment: center;
+            
+            next-button := Button {
+                text: "Next ➜";
+                primary: true;
+                enabled: root.username != "" && root.selected-fund-index >= 0;
+                width: 350px;
+                height: 120px;
+                
+                clicked => {
+                    if (root.selected-fund-index >= 0 && root.selected-fund-index < root.fund-ids.length) {
+                        root.next-clicked(root.username, root.fund-ids[root.selected-fund-index]);
+                    }
+                }
+            }
+        }
+        
+
+    }
+}

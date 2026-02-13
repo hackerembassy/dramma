@@ -1,0 +1,55 @@
+import { LineEdit, Button } from "std-widgets.slint";
+
+export component Main inherits Rectangle {
+    callback donate-clicked();
+    callback home-assistant-clicked();
+
+    VerticalLayout {
+        alignment: space-between;
+        padding: 16px;
+        spacing: 8px;
+
+        // logo at top center
+        HorizontalLayout {
+            alignment: center;
+            
+            Image {
+                source: @image-url("../assets/xkem.png");
+                max-width: 233px;
+                max-height: 250px;
+            }
+        }
+
+        // spacer to push button to bottom
+        Rectangle {
+            vertical-stretch: 1;
+            background: transparent;
+        }
+
+        // buttons at bottom center
+        HorizontalLayout {
+            alignment: center;
+            spacing: 16px;
+
+            Button {
+                text: "DONATE";
+                width: 350px;
+                height: 120px;
+                
+                clicked => {
+                    root.donate-clicked();
+                }
+            }
+
+            Button {
+                text: "HASS";
+                width: 350px;
+                height: 120px;
+                
+                clicked => {
+                    root.home-assistant-clicked();
+                }
+            }
+        }
+    }
+}
