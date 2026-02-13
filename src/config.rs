@@ -15,10 +15,24 @@ pub enum ConfigError {
     ParseError(#[from] toml::de::Error),
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
 pub struct Config {
-    pub token: String,
-    pub home_assistant_url: Option<String>,
+    pub token: Option<String>,
+    pub home_assistant_url: String,
+    pub cashcode_serial_port: String,
+    pub stats_db_path: String,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            token: None,
+            home_assistant_url: "http://localhost:8123".to_string(),
+            cashcode_serial_port: "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0".to_string(),
+            stats_db_path: "data/Stats.db".to_string(),
+        }
+    }
 }
 
 impl Config {

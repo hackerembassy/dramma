@@ -25,16 +25,7 @@ pub fn main() {
     info!("Starting :3");
 
     // Load config
-    let config = match Config::load() {
-        Ok(config) => {
-            info!("Config loaded successfully");
-            Some(config)
-        }
-        Err(e) => {
-            warn!("Config not loaded: {}. Donations will not be sent.", e);
-            None
-        }
-    };
+    let config = Config::load().unwrap_or_default();
 
     let main_window = MainWindow::new().unwrap();
 
@@ -42,10 +33,10 @@ pub fn main() {
     main_window.window().set_fullscreen(true);
 
     virtual_keyboard::init(&main_window);
-    let cashcode_tx = bill_acceptor::init(&main_window);
-    fund_fetcher::init(&main_window, config.clone());
-    donation_handler::init(&main_window, config.clone(), cashcode_tx);
-    home_assistant_handler::init(&main_window, config);
+    let cashcode_tx = bill_acceptor::init(&main_window, &config);
+    fund_fetcher::init(&main_window, &config);
+    donation_handler::init(&main_window, &config, cashcode_tx);
+    home_assistant_handler::init(&main_window, &config);
 
     main_window.run().unwrap();
 }
@@ -62,7 +53,7 @@ mod bill_acceptor {
         Disable,
     }
 
-    pub fn init(app: &MainWindow) -> Sender<CashCodeCommand> {
+    pub fn init(app: &MainWindow, config: &Config) -> Sender<CashCodeCommand> {
         let weak = app.as_weak();
 
         // Create a channel for bill events (from CashCode to UI)
@@ -72,9 +63,12 @@ mod bill_acceptor {
         let (cmd_tx, cmd_rx) = channel::<CashCodeCommand>();
 
         // Start CashCode driver in a separate thread
-        thread::spawn(move || match init_cashcode(event_tx, cmd_rx) {
-            Ok(_) => info!("CashCode driver stopped"),
-            Err(e) => error!("CashCode driver error: {}", e),
+        thread::spawn({
+            let config = config.clone();
+            move || match init_cashcode(&config, event_tx, cmd_rx) {
+                Ok(_) => info!("CashCode driver stopped"),
+                Err(e) => error!("CashCode driver error: {}", e),
+            }
         });
 
         // Set up callbacks for page transitions
@@ -138,19 +132,14 @@ mod bill_acceptor {
 }
 
 fn init_cashcode(
+    config: &Config,
     tx: Sender<BillEvent>,
     cmd_rx: std::sync::mpsc::Receiver<bill_acceptor::CashCodeCommand>,
 ) -> Result<(), cashcode::CashCodeError> {
     use bill_acceptor::CashCodeCommand;
 
-    // Adjust the serial port path to match your system
-    // You can find it with: ls -la /dev/serial/by-id/
-    let port_path =
-        "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0";
-    let db_path = "data/Stats.db";
-
     info!("Initializing CashCode driver...");
-    let mut cashcode = CashCode::new(port_path, db_path)?;
+    let mut cashcode = CashCode::new(&config.cashcode_serial_port, &config.stats_db_path)?;
 
     info!("Resetting bill acceptor...");
     cashcode.reset()?;
@@ -166,7 +155,7 @@ fn init_cashcode(
 
     // Keep bill acceptor disabled until UI requests to enable it
     info!("Bill acceptor initialized, waiting for enable command...");
-    let mut is_enabled = false;
+    let mut is_enabled;
 
     info!("Starting polling loop...");
     loop {
@@ -203,13 +192,10 @@ fn init_cashcode(
                 }
 
                 // Also log for debugging
-                match event {
-                    BillEvent::Accepted(_nominal) => {
-                        if let Ok(total) = cashcode.get_total_amount() {
-                            info!("Total collected in DB: {} dram", total);
-                        }
+                if let BillEvent::Accepted(_nominal) = event {
+                    if let Ok(total) = cashcode.get_total_amount() {
+                        info!("Total collected in DB: {} dram", total);
                     }
-                    _ => {}
                 }
             }
             Ok(_none) => {
@@ -251,19 +237,20 @@ mod fund_fetcher {
     use crate::funds;
     use slint::*;
 
-    pub fn init(app: &MainWindow, config: Option<Config>) {
+    pub fn init(app: &MainWindow, config: &Config) {
         let app_weak = app.as_weak();
 
         app.on_fetch_funds({
+            let config = config.clone();
             move || {
                 let app = match app_weak.upgrade() {
                     Some(app) => app,
                     None => return,
                 };
 
-                if let Some(ref cfg) = config {
+                if let Some(ref token) = config.token {
                     info!("🔍 Fetching funds from API...");
-                    match funds::fetch_funds(&cfg.token) {
+                    match funds::fetch_funds(token) {
                         Ok(funds_data) => {
                             info!("✅ Fetched {} funds", funds_data.len());
 
@@ -320,11 +307,12 @@ mod donation_handler {
 
     pub fn init(
         app: &MainWindow,
-        config: Option<Config>,
+        config: &Config,
         cashcode_tx: Sender<bill_acceptor::CashCodeCommand>,
     ) {
         app.on_done_clicked({
             let cashcode_tx = cashcode_tx.clone();
+            let token = config.token.clone();
             move |username, fund_id, amount| {
                 info!(
                     "💰 Processing donation: {} AMD from {} to fund {}",
@@ -338,14 +326,16 @@ mod donation_handler {
                 {
                     error!("Failed to send disable command to CashCode on done click");
                 }
-                if let Some(ref cfg) = config {
+                if let Some(ref token) = token {
                     // Send donation in a separate thread to not block UI
-                    let token = cfg.token.clone();
                     let username_str = username.to_string();
-                    thread::spawn(move || {
-                        match donation::send_donation(&token, fund_id, &username_str, amount) {
-                            Ok(_) => info!("✅ Donation sent successfully!"),
-                            Err(e) => error!("❌ Failed to send donation: {}", e),
+                    thread::spawn({
+                        let token = token.clone();
+                        move || {
+                            match donation::send_donation(&token, fund_id, &username_str, amount) {
+                                Ok(_) => info!("✅ Donation sent successfully!"),
+                                Err(e) => error!("❌ Failed to send donation: {}", e),
+                            }
                         }
                     });
                 } else {
@@ -361,23 +351,13 @@ mod home_assistant_handler {
     use crate::home_assistant::ChromiumManager;
     use std::sync::Arc;
 
-    pub fn init(app: &MainWindow, config: Option<Config>) {
+    pub fn init(app: &MainWindow, config: &Config) {
         let chromium = Arc::new(ChromiumManager::new());
-
-        // Get Home Assistant URL from config
-        let home_assistant_url = config
-            .as_ref()
-            .and_then(|c| c.home_assistant_url.clone())
-            .unwrap_or_else(|| {
-                warn!("No home_assistant_url in config, using default");
-                "http://localhost:8123".to_string()
-            });
-
-        info!("Home Assistant URL configured: {}", home_assistant_url);
+        info!("Home Assistant URL configured: {}", config.home_assistant_url);
 
         // Launch Chromium when showing Home Assistant page
         let chromium_show = chromium.clone();
-        let url_for_launch = home_assistant_url.clone();
+        let url_for_launch = config.home_assistant_url.clone();
         app.on_show_home_assistant(move || {
             info!("Showing Home Assistant page, launching Chromium");
             if let Err(e) = chromium_show.launch(&url_for_launch) {
