@@ -201,11 +201,10 @@ fn init_cashcode(
                 }
 
                 // Also log for debugging
-                if let BillEvent::Accepted(_nominal) = event {
-                    if let Ok(total) = cashcode.get_total_amount() {
+                if let BillEvent::Accepted(_nominal) = event
+                    && let Ok(total) = cashcode.get_total_amount() {
                         info!("Total collected in DB: {} dram", total);
                     }
-                }
             }
             Ok(_none) => {
                 // No event, continue polling
