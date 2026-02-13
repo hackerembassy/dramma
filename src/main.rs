@@ -25,7 +25,13 @@ pub fn main() {
     info!("Starting :3");
 
     // Load config
-    let config = Config::load().unwrap_or_default();
+    let config = match Config::load() {
+        Ok(config) => config,
+        Err(e) => {
+            error!("Failed to load configuration, falling back to defaults: {}", e);
+            Config::default()
+        }
+    };
 
     let main_window = MainWindow::new().unwrap();
 
