@@ -28,7 +28,10 @@ pub fn main() {
     let config = match Config::load() {
         Ok(config) => config,
         Err(e) => {
-            error!("Failed to load configuration, falling back to defaults: {}", e);
+            error!(
+                "Failed to load configuration, falling back to defaults: {}",
+                e
+            );
             Config::default()
         }
     };
@@ -337,11 +340,14 @@ mod donation_handler {
                     let username_str = username.to_string();
                     thread::spawn({
                         let token = token.clone();
-                        move || {
-                            match donation::send_donation(&token, fund_id, &username_str, amount) {
-                                Ok(_) => info!("✅ Donation sent successfully!"),
-                                Err(e) => error!("❌ Failed to send donation: {}", e),
-                            }
+                        move || match donation::send_donation(
+                            &token,
+                            fund_id,
+                            &username_str,
+                            amount,
+                        ) {
+                            Ok(_) => info!("✅ Donation sent successfully!"),
+                            Err(e) => error!("❌ Failed to send donation: {}", e),
                         }
                     });
                 } else {
@@ -359,7 +365,10 @@ mod home_assistant_handler {
 
     pub fn init(app: &MainWindow, config: &Config) {
         let chromium = Arc::new(ChromiumManager::new());
-        info!("Home Assistant URL configured: {}", config.home_assistant_url);
+        info!(
+            "Home Assistant URL configured: {}",
+            config.home_assistant_url
+        );
 
         // Launch Chromium when showing Home Assistant page
         let chromium_show = chromium.clone();
