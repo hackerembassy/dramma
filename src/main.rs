@@ -295,7 +295,7 @@ mod fund_fetcher {
                         }
                     }
                 } else {
-                    warn!("⚠️  No config loaded, cannot fetch funds");
+                    warn!("⚠️  No token loaded, cannot fetch funds");
                     app.set_available_funds(slint::ModelRc::new(slint::VecModel::<
                         slint::SharedString,
                     >::default()));
@@ -345,7 +345,7 @@ mod donation_handler {
                         }
                     });
                 } else {
-                    warn!("⚠️  No config loaded, donation not sent to server");
+                    warn!("⚠️  No token loaded, donation not sent to server");
                 }
             }
         });
