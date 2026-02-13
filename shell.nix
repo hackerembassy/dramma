@@ -6,17 +6,17 @@ pkgs.mkShell {
     cargo
     pkg-config
     patchelf
-    
+
     # Libraries needed for slint and serialport
     fontconfig.dev
     systemd.dev
     wayland
     libxkbcommon
     libGL
-    xorg.libX11
-    xorg.libXcursor
-    xorg.libXrandr
-    xorg.libXi
+    libX11
+    libXcursor
+    libXrandr
+    libXi
   ];
 
   shellHook = ''
@@ -24,10 +24,10 @@ pkgs.mkShell {
       pkgs.wayland
       pkgs.libxkbcommon
       pkgs.libGL
-      pkgs.xorg.libX11
-      pkgs.xorg.libXcursor
-      pkgs.xorg.libXrandr
-      pkgs.xorg.libXi
+      pkgs.libX11
+      pkgs.libXcursor
+      pkgs.libXrandr
+      pkgs.libXi
     ]}
     echo "Rust development environment"
     echo "Rust version: $(rustc --version)"

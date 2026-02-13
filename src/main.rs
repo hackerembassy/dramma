@@ -39,12 +39,12 @@ pub fn main() {
     let main_window = MainWindow::new().unwrap();
 
     // Enable fullscreen mode for kiosk deployment
-    // main_window.window().set_fullscreen(true);
+    main_window.window().set_fullscreen(true);
 
     virtual_keyboard::init(&main_window);
-    bill_acceptor::init(&main_window);
+    let cashcode_tx = bill_acceptor::init(&main_window);
     fund_fetcher::init(&main_window, config.clone());
-    donation_handler::init(&main_window, config.clone());
+    donation_handler::init(&main_window, config.clone(), cashcode_tx);
     home_assistant_handler::init(&main_window, config);
 
     main_window.run().unwrap();
@@ -62,7 +62,7 @@ mod bill_acceptor {
         Disable,
     }
 
-    pub fn init(app: &MainWindow) {
+    pub fn init(app: &MainWindow) -> Sender<CashCodeCommand> {
         let weak = app.as_weak();
 
         // Create a channel for bill events (from CashCode to UI)
@@ -132,6 +132,8 @@ mod bill_acceptor {
         // Keep the timer alive for the lifetime of the application
         // Otherwise the timer is dropped, the closure is dropped, and the channel receiver is dropped
         std::mem::forget(timer);
+
+        cmd_tx
     }
 }
 
@@ -320,14 +322,26 @@ mod fund_fetcher {
 mod donation_handler {
     use super::*;
 
-    pub fn init(app: &MainWindow, config: Option<Config>) {
+    pub fn init(
+        app: &MainWindow,
+        config: Option<Config>,
+        cashcode_tx: Sender<bill_acceptor::CashCodeCommand>,
+    ) {
         app.on_done_clicked({
+            let cashcode_tx = cashcode_tx.clone();
             move |username, fund_id, amount| {
                 info!(
                     "💰 Processing donation: {} AMD from {} to fund {}",
                     amount, username, fund_id
                 );
 
+                // Stop accepting money immediately
+                if cashcode_tx
+                    .send(bill_acceptor::CashCodeCommand::Disable)
+                    .is_err()
+                {
+                    error!("Failed to send disable command to CashCode on done click");
+                }
                 if let Some(ref cfg) = config {
                     // Send donation in a separate thread to not block UI
                     let token = cfg.token.clone();
