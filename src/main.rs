@@ -174,25 +174,21 @@ fn init_cashcode(
         while let Ok(cmd) = cmd_rx.try_recv() {
             match cmd {
                 CashCodeCommand::Enable => {
-                    if !is_enabled {
-                        info!("📥 Enabling bill acceptor...");
-                        if let Err(e) = cashcode.enable() {
-                            error!("Failed to enable bill acceptor: {}", e);
-                        } else {
-                            is_enabled = true;
-                            info!("✅ Bill acceptor enabled");
-                        }
+                    info!("📥 Enabling bill acceptor...");
+                    if let Err(e) = cashcode.enable() {
+                        error!("Failed to enable bill acceptor: {}", e);
+                    } else {
+                        is_enabled = true;
+                        info!("✅ Bill acceptor enabled");
                     }
                 }
                 CashCodeCommand::Disable => {
-                    if is_enabled {
-                        info!("📤 Disabling bill acceptor...");
-                        if let Err(e) = cashcode.disable() {
-                            error!("Failed to disable bill acceptor: {}", e);
-                        } else {
-                            is_enabled = false;
-                            info!("✅ Bill acceptor disabled");
-                        }
+                    info!("📤 Disabling bill acceptor...");
+                    if let Err(e) = cashcode.disable() {
+                        error!("Failed to disable bill acceptor: {}", e);
+                    } else {
+                        is_enabled = false;
+                        info!("✅ Bill acceptor disabled");
                     }
                 }
             }
