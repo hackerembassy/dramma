@@ -24,6 +24,7 @@ const STATUS_DISABLED: u8 = 0x19;
 const STATUS_IDLING: u8 = 0x14;
 const STATUS_ACCEPTING: u8 = 0x15;
 const STATUS_STACKING: u8 = 0x17;
+#[allow(dead_code)]
 const STATUS_STACKER_FULL: u8 = 0x41;
 const STATUS_STACKER_REMOVED: u8 = 0x42;
 const STATUS_JAM_IN_ACCEPTOR: u8 = 0x43;
@@ -62,12 +63,15 @@ pub enum CashCodeError {
     #[error("database error: {0}")]
     Database(#[from] rusqlite::Error),
 
+    #[allow(dead_code)]
     #[error("invalid response: {0}")]
     InvalidResponse(String),
 
+    #[allow(dead_code)]
     #[error("unexpected ack")]
     UnexpectedAck,
 
+    #[allow(dead_code)]
     #[error("device error: {0}")]
     DeviceError(String),
 }
@@ -406,6 +410,7 @@ impl CashCode {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn get_bill_counts(&self) -> Result<Vec<(i32, i32)>, CashCodeError> {
         let db = self.db.lock().unwrap();
         let mut stmt =

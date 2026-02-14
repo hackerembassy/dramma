@@ -29,7 +29,9 @@ impl Default for Config {
         Self {
             token: None,
             home_assistant_url: "http://localhost:8123".to_string(),
-            cashcode_serial_port: "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0".to_string(),
+            cashcode_serial_port:
+                "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0"
+                    .to_string(),
             stats_db_path: "data/Stats.db".to_string(),
         }
     }

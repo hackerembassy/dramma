@@ -28,7 +28,10 @@ pub fn main() {
     let config = match Config::load() {
         Ok(config) => config,
         Err(e) => {
-            error!("Failed to load configuration, falling back to defaults: {}", e);
+            error!(
+                "Failed to load configuration, falling back to defaults: {}",
+                e
+            );
             Config::default()
         }
     };
@@ -161,8 +164,6 @@ fn init_cashcode(
 
     // Keep bill acceptor disabled until UI requests to enable it
     info!("Bill acceptor initialized, waiting for enable command...");
-    let mut is_enabled;
-
     info!("Starting polling loop...");
     loop {
         // Check for enable/disable commands from UI
@@ -173,7 +174,6 @@ fn init_cashcode(
                     if let Err(e) = cashcode.enable() {
                         error!("Failed to enable bill acceptor: {}", e);
                     } else {
-                        is_enabled = true;
                         info!("✅ Bill acceptor enabled");
                     }
                 }
@@ -182,7 +182,6 @@ fn init_cashcode(
                     if let Err(e) = cashcode.disable() {
                         error!("Failed to disable bill acceptor: {}", e);
                     } else {
-                        is_enabled = false;
                         info!("✅ Bill acceptor disabled");
                     }
                 }
@@ -198,10 +197,10 @@ fn init_cashcode(
                 }
 
                 // Also log for debugging
-                if let BillEvent::Accepted(_nominal) = event {
-                    if let Ok(total) = cashcode.get_total_amount() {
-                        info!("Total collected in DB: {} dram", total);
-                    }
+                if let BillEvent::Accepted(_nominal) = event
+                    && let Ok(total) = cashcode.get_total_amount()
+                {
+                    info!("Total collected in DB: {} dram", total);
                 }
             }
             Ok(_none) => {
@@ -337,11 +336,14 @@ mod donation_handler {
                     let username_str = username.to_string();
                     thread::spawn({
                         let token = token.clone();
-                        move || {
-                            match donation::send_donation(&token, fund_id, &username_str, amount) {
-                                Ok(_) => info!("✅ Donation sent successfully!"),
-                                Err(e) => error!("❌ Failed to send donation: {}", e),
-                            }
+                        move || match donation::send_donation(
+                            &token,
+                            fund_id,
+                            &username_str,
+                            amount,
+                        ) {
+                            Ok(_) => info!("✅ Donation sent successfully!"),
+                            Err(e) => error!("❌ Failed to send donation: {}", e),
                         }
                     });
                 } else {
@@ -359,7 +361,10 @@ mod home_assistant_handler {
 
     pub fn init(app: &MainWindow, config: &Config) {
         let chromium = Arc::new(ChromiumManager::new());
-        info!("Home Assistant URL configured: {}", config.home_assistant_url);
+        info!(
+            "Home Assistant URL configured: {}",
+            config.home_assistant_url
+        );
 
         // Launch Chromium when showing Home Assistant page
         let chromium_show = chromium.clone();
