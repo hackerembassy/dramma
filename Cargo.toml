@@ -17,8 +17,10 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 thiserror = "2.0"
 log = "0.4"
 env_logger = "0.11"
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+isahc = { version = "1.7", features = ["json"] }
+http = "0.2"
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 toml = "0.8"
 
 

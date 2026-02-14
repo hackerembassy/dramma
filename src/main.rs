@@ -6,6 +6,7 @@ slint::include_modules!();
 mod cashcode;
 mod config;
 mod donation;
+mod error;
 mod funds;
 mod home_assistant;
 
@@ -243,62 +244,65 @@ mod fund_fetcher {
     use slint::*;
 
     pub fn init(app: &MainWindow, config: &Config) {
-        let app_weak = app.as_weak();
+        let app_handle = app.clone_strong();
 
         app.on_fetch_funds({
             let config = config.clone();
             move || {
-                let app = match app_weak.upgrade() {
-                    Some(app) => app,
-                    None => return,
-                };
-
                 if let Some(ref token) = config.token {
                     info!("🔍 Fetching funds from API...");
-                    match funds::fetch_funds(token) {
-                        Ok(funds_data) => {
-                            info!("✅ Fetched {} funds", funds_data.len());
+                    let token = token.clone();
+                    let app = app_handle.clone_strong();
 
-                            // Convert funds to string array for ComboBox
-                            let model_data: Vec<slint::SharedString> = funds_data
-                                .iter()
-                                .map(|fund| {
-                                    slint::SharedString::from(std::format!(
-                                        "{} (ID: {})",
-                                        fund.name,
-                                        fund.id
-                                    ))
-                                })
-                                .collect();
+                    slint::spawn_local(async move {
+                        match funds::fetch_funds(&token).await {
+                            Ok(funds_data) => {
+                                info!("✅ Fetched {} funds", funds_data.len());
 
-                            // Also store fund IDs separately for lookup
-                            let fund_ids: Vec<i32> = funds_data.iter().map(|f| f.id).collect();
+                                // Convert funds to string array for ComboBox
+                                let model_data: Vec<slint::SharedString> = funds_data
+                                    .iter()
+                                    .map(|fund| {
+                                        slint::SharedString::from(std::format!(
+                                            "{} (ID: {})",
+                                            fund.name,
+                                            fund.id
+                                        ))
+                                    })
+                                    .collect();
 
-                            // Set the properties on MainWindow
-                            app.set_available_funds(slint::ModelRc::new(slint::VecModel::from(
-                                model_data,
-                            )));
-                            app.set_available_fund_ids(slint::ModelRc::new(slint::VecModel::from(
-                                fund_ids,
-                            )));
+                                // Also store fund IDs separately for lookup
+                                let fund_ids: Vec<i32> = funds_data.iter().map(|f| f.id).collect();
+
+                                // Set the properties on MainWindow
+                                app.set_available_funds(slint::ModelRc::new(
+                                    slint::VecModel::from(model_data),
+                                ));
+                                app.set_available_fund_ids(slint::ModelRc::new(
+                                    slint::VecModel::from(fund_ids),
+                                ));
+                            }
+                            Err(e) => {
+                                error!("❌ Failed to fetch funds: {}", e);
+                                app.set_available_funds(slint::ModelRc::new(slint::VecModel::<
+                                    slint::SharedString,
+                                >::default(
+                                )));
+                                app.set_available_fund_ids(slint::ModelRc::new(slint::VecModel::<
+                                    i32,
+                                >::default(
+                                )));
+                            }
                         }
-                        Err(e) => {
-                            error!("❌ Failed to fetch funds: {}", e);
-                            app.set_available_funds(slint::ModelRc::new(slint::VecModel::<
-                                slint::SharedString,
-                            >::default(
-                            )));
-                            app.set_available_fund_ids(slint::ModelRc::new(
-                                slint::VecModel::<i32>::default(),
-                            ));
-                        }
-                    }
+                    })
+                    .unwrap();
                 } else {
                     warn!("⚠️  No token loaded, cannot fetch funds");
-                    app.set_available_funds(slint::ModelRc::new(slint::VecModel::<
+                    app_handle.set_available_funds(slint::ModelRc::new(slint::VecModel::<
                         slint::SharedString,
-                    >::default()));
-                    app.set_available_fund_ids(slint::ModelRc::new(
+                    >::default(
+                    )));
+                    app_handle.set_available_fund_ids(slint::ModelRc::new(
                         slint::VecModel::<i32>::default(),
                     ));
                 }
@@ -332,20 +336,17 @@ mod donation_handler {
                     error!("Failed to send disable command to CashCode on done click");
                 }
                 if let Some(ref token) = token {
-                    // Send donation in a separate thread to not block UI
+                    // Send donation asynchronously using slint::spawn_local
+                    let token = token.clone();
                     let username_str = username.to_string();
-                    thread::spawn({
-                        let token = token.clone();
-                        move || match donation::send_donation(
-                            &token,
-                            fund_id,
-                            &username_str,
-                            amount,
-                        ) {
+                    slint::spawn_local(async move {
+                        match donation::send_donation(&token, fund_id, &username_str, amount).await
+                        {
                             Ok(_) => info!("✅ Donation sent successfully!"),
                             Err(e) => error!("❌ Failed to send donation: {}", e),
                         }
-                    });
+                    })
+                    .unwrap();
                 } else {
                     warn!("⚠️  No token loaded, donation not sent to server");
                 }

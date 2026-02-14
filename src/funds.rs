@@ -1,14 +1,9 @@
+use http::Request;
+use isahc::prelude::*;
 use log::{error, info};
 use serde::Deserialize;
-use thiserror::Error;
 
-#[derive(Debug, Error)]
-pub enum FundsError {
-    #[error("HTTP request failed: {0}")]
-    RequestError(#[from] reqwest::Error),
-    #[error("API returned error status {status}: {message}")]
-    ApiError { status: u16, message: String },
-}
+use crate::error::RequestError;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Fund {
@@ -22,29 +17,31 @@ pub struct Fund {
     pub status: String,
 }
 
-/// Fetches available open funds from the API
-pub fn fetch_funds(token: &str) -> Result<Vec<Fund>, FundsError> {
+/// Fetches available open funds from the API asynchronously
+pub async fn fetch_funds(token: &str) -> Result<Vec<Fund>, RequestError> {
     let url = "https://gateway.hackem.cc/api/funds?status=open";
 
     info!("Fetching open funds from API...");
 
-    let client = reqwest::blocking::Client::new();
-    let response = client
-        .get(url)
+    let request = Request::get(url)
         .header("Authorization", format!("Bearer {}", token))
-        .send()?;
+        .body(())?;
+
+    let mut response = isahc::send_async(request).await?;
 
     let status = response.status();
     if status.is_success() {
-        let funds: Vec<Fund> = response.json()?;
+        let funds: Vec<Fund> = response.json().await?;
         info!("✅ Fetched {} open funds", funds.len());
         Ok(funds)
     } else {
         let message = response
             .text()
+            .await
             .unwrap_or_else(|_| "Unknown error".to_string());
+
         error!("❌ API error {}: {}", status.as_u16(), message);
-        Err(FundsError::ApiError {
+        Err(RequestError::Api {
             status: status.as_u16(),
             message,
         })
