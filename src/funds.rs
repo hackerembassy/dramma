@@ -14,8 +14,11 @@ pub enum FundsError {
 pub struct Fund {
     pub id: i32,
     pub name: String,
+    #[allow(dead_code)]
     pub target_value: i32,
+    #[allow(dead_code)]
     pub target_currency: String,
+    #[allow(dead_code)]
     pub status: String,
 }
 

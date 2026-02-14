@@ -164,8 +164,6 @@ fn init_cashcode(
 
     // Keep bill acceptor disabled until UI requests to enable it
     info!("Bill acceptor initialized, waiting for enable command...");
-    let mut is_enabled;
-
     info!("Starting polling loop...");
     loop {
         // Check for enable/disable commands from UI
@@ -176,7 +174,6 @@ fn init_cashcode(
                     if let Err(e) = cashcode.enable() {
                         error!("Failed to enable bill acceptor: {}", e);
                     } else {
-                        is_enabled = true;
                         info!("✅ Bill acceptor enabled");
                     }
                 }
@@ -185,7 +182,6 @@ fn init_cashcode(
                     if let Err(e) = cashcode.disable() {
                         error!("Failed to disable bill acceptor: {}", e);
                     } else {
-                        is_enabled = false;
                         info!("✅ Bill acceptor disabled");
                     }
                 }
