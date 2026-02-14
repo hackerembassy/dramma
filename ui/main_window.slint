@@ -1,11 +1,12 @@
 import { VirtualKeyboardHandler, VirtualKeyboard, KeyModel } from "virtual_keyboard.slint";
+import { AutocompleteHandler } from "autocomplete_line_edit.slint";
 
 import { Main } from "pages/main.slint";
 import { Donate } from "pages/donate.slint";
 import { InsertMoney } from "pages/insert_money.slint";
 import { HomeAssistant } from "pages/home_assistant.slint";
 
-export { VirtualKeyboardHandler, KeyModel }
+export { VirtualKeyboardHandler, KeyModel, AutocompleteHandler }
 
 enum Page {
     Main,
@@ -25,6 +26,7 @@ export component MainWindow inherits Window {
     // data storage
     in-out property <[string]> available-funds: [];
     in-out property <[int]> available-fund-ids: [];
+    in-out property <[string]> usernames: [];
 
     // callbacks for rust to hook into
     callback done-clicked(string, int, int);  // username, fund_id, amount
@@ -33,6 +35,7 @@ export component MainWindow inherits Window {
     callback show-home-assistant();
     callback hide-home-assistant();
     callback fetch-funds();  // fetches available-funds and available-fund-ids
+    callback fetch-usernames();  // fetches available-usernames for autocomplete
 
     title: "Donation Machine";
     width: 1280px;
@@ -52,9 +55,14 @@ export component MainWindow inherits Window {
         if current-page == Page.Donate: Donate {
             fund-items: root.available-funds;
             fund-ids: root.available-fund-ids;
-            
+            username-suggestions: root.usernames;
+
             fetch-funds => {
                 root.fetch-funds();
+            }
+
+            fetch-usernames => {
+                root.fetch-usernames();
             }
             
             back-clicked => {
@@ -102,7 +110,7 @@ export component MainWindow inherits Window {
         }
 
         keyboard := VirtualKeyboard {
-            y: TextInputInterface.text-input-focused && VirtualKeyboardHandler.open ? parent.height - self.height : parent.height;
+            y: VirtualKeyboardHandler.open ? parent.height - self.height : parent.height;
         }
     }
 }

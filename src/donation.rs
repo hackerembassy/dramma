@@ -60,3 +60,29 @@ pub async fn send_donation(
         })
     }
 }
+
+/// Sends a donation to the API asynchronously
+pub async fn fetch_usernames(token: &str) -> Result<Vec<String>, RequestError> {
+    let request = Request::get("https://gateway.hackem.cc/api/usernames")
+        .header("Authorization", format!("Bearer {}", token))
+        .header("Content-Type", "application/json")
+        .body(())?;
+
+    let mut response = isahc::send_async(request).await?;
+
+    let status = response.status();
+    if status.is_success() {
+        let usernames: Vec<String> = response.json().await?;
+        Ok(usernames)
+    } else {
+        let message = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
+        error!("❌ API error {}: {}", status.as_u16(), message);
+        Err(RequestError::Api {
+            status: status.as_u16(),
+            message,
+        })
+    }
+}

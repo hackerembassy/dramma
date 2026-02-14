@@ -13,6 +13,7 @@ mod home_assistant;
 use cashcode::{BillEvent, CashCode};
 use config::Config;
 use log::{error, info, warn};
+use slint::Model;
 use std::sync::mpsc::Sender;
 use std::thread;
 use std::time::Duration;
@@ -43,6 +44,7 @@ pub fn main() {
     main_window.window().set_fullscreen(true);
 
     virtual_keyboard::init(&main_window);
+    autocomplete_handler::init(&main_window);
     let cashcode_tx = bill_acceptor::init(&main_window, &config);
     fund_fetcher::init(&main_window, &config);
     donation_handler::init(&main_window, &config, cashcode_tx);
@@ -221,20 +223,80 @@ fn init_cashcode(
 
 mod virtual_keyboard {
     use super::*;
+    use slint::platform::Key;
     use slint::*;
 
     pub fn init(app: &MainWindow) {
         let weak = app.as_weak();
         app.global::<VirtualKeyboardHandler>().on_key_pressed({
             move |key| {
-                weak.unwrap()
+                let window = weak.unwrap();
+
+                // Check if the right arrow was pressed - trigger autocomplete
+                if key == SharedString::from(Key::RightArrow) {
+                    let handler = window.global::<AutocompleteHandler>();
+                    let current = handler.get_trigger_autocomplete_toggle();
+                    handler.set_trigger_autocomplete_toggle(!current);
+                }
+
+                window
                     .window()
                     .dispatch_event(slint::platform::WindowEvent::KeyPressed { text: key.clone() });
-                weak.unwrap()
+                window
                     .window()
                     .dispatch_event(slint::platform::WindowEvent::KeyReleased { text: key });
             }
         });
+    }
+}
+
+mod autocomplete_handler {
+    use super::*;
+
+    pub fn init(app: &MainWindow) {
+        app.global::<AutocompleteHandler>()
+            .on_find_suggestion(|input, suggestions| {
+                if input.is_empty() {
+                    return slint::SharedString::default();
+                }
+
+                let input_lower = input.to_lowercase();
+
+                // Find the first suggestion that starts with the input (case-insensitive)
+                for suggestion in suggestions.iter() {
+                    let suggestion_lower = suggestion.to_lowercase();
+                    if suggestion_lower.starts_with(&input_lower) && suggestion_lower != input_lower
+                    {
+                        return suggestion;
+                    }
+                }
+
+                slint::SharedString::default()
+            });
+
+        app.global::<AutocompleteHandler>()
+            .on_get_suggestion_suffix(|typed, suggestion| {
+                if suggestion.is_empty() || typed.is_empty() {
+                    return slint::SharedString::default();
+                }
+
+                // Get the suffix after the typed text
+                let typed_len = typed.chars().count();
+                let suffix: String = suggestion.chars().skip(typed_len).collect();
+                slint::SharedString::from(suffix)
+            });
+
+        app.global::<AutocompleteHandler>()
+            .on_is_valid_input(|input, suggestions| {
+                if input.is_empty() {
+                    return false;
+                }
+
+                let input_lower = input.to_lowercase();
+
+                // Check if input exactly matches any suggestion (case-insensitive)
+                suggestions.iter().any(|s| s.to_lowercase() == input_lower)
+            });
     }
 }
 
@@ -246,67 +308,97 @@ mod fund_fetcher {
     pub fn init(app: &MainWindow, config: &Config) {
         let app_handle = app.clone_strong();
 
-        app.on_fetch_funds({
-            let config = config.clone();
-            move || {
-                if let Some(ref token) = config.token {
-                    info!("🔍 Fetching funds from API...");
-                    let token = token.clone();
-                    let app = app_handle.clone_strong();
+        let Some(ref token) = config.token else {
+            warn!("⚠️  No token loaded, donation functions unavailable");
+            app_handle.set_available_funds(slint::ModelRc::new(slint::VecModel::<
+                slint::SharedString,
+            >::default()));
+            app_handle
+                .set_available_fund_ids(slint::ModelRc::new(slint::VecModel::<i32>::default()));
 
-                    slint::spawn_local(async move {
-                        match funds::fetch_funds(&token).await {
-                            Ok(funds_data) => {
-                                info!("✅ Fetched {} funds", funds_data.len());
+            return;
+        };
 
-                                // Convert funds to string array for ComboBox
-                                let model_data: Vec<slint::SharedString> = funds_data
-                                    .iter()
-                                    .map(|fund| {
-                                        slint::SharedString::from(std::format!(
-                                            "{} (ID: {})",
-                                            fund.name,
-                                            fund.id
-                                        ))
-                                    })
-                                    .collect();
+        let token = token.clone();
+        let token_usernames = token.clone();
+        app.on_fetch_funds(move || {
+            info!("🔍 Fetching funds from API...");
+            let app = app_handle.clone_strong();
+            let token = token.clone();
 
-                                // Also store fund IDs separately for lookup
-                                let fund_ids: Vec<i32> = funds_data.iter().map(|f| f.id).collect();
+            slint::spawn_local(async move {
+                match funds::fetch_funds(&token).await {
+                    Ok(value) => {
+                        info!("✅ Fetched {} funds", value.len());
 
-                                // Set the properties on MainWindow
-                                app.set_available_funds(slint::ModelRc::new(
-                                    slint::VecModel::from(model_data),
-                                ));
-                                app.set_available_fund_ids(slint::ModelRc::new(
-                                    slint::VecModel::from(fund_ids),
-                                ));
-                            }
-                            Err(e) => {
-                                error!("❌ Failed to fetch funds: {}", e);
-                                app.set_available_funds(slint::ModelRc::new(slint::VecModel::<
-                                    slint::SharedString,
-                                >::default(
-                                )));
-                                app.set_available_fund_ids(slint::ModelRc::new(slint::VecModel::<
-                                    i32,
-                                >::default(
-                                )));
-                            }
-                        }
-                    })
-                    .unwrap();
-                } else {
-                    warn!("⚠️  No token loaded, cannot fetch funds");
-                    app_handle.set_available_funds(slint::ModelRc::new(slint::VecModel::<
-                        slint::SharedString,
-                    >::default(
-                    )));
-                    app_handle.set_available_fund_ids(slint::ModelRc::new(
-                        slint::VecModel::<i32>::default(),
-                    ));
+                        // Convert funds to string array for ComboBox
+                        let model_data: Vec<slint::SharedString> = value
+                            .iter()
+                            .map(|fund| {
+                                slint::SharedString::from(std::format!(
+                                    "{} (ID: {})",
+                                    fund.name,
+                                    fund.id
+                                ))
+                            })
+                            .collect();
+
+                        // Also store fund IDs separately for lookup
+                        let fund_ids: Vec<i32> = value.iter().map(|f| f.id).collect();
+
+                        // Set the properties on MainWindow
+                        app.set_available_funds(slint::ModelRc::new(slint::VecModel::from(
+                            model_data,
+                        )));
+                        app.set_available_fund_ids(slint::ModelRc::new(slint::VecModel::from(
+                            fund_ids,
+                        )));
+                    }
+                    Err(e) => {
+                        error!("❌ Failed to fetch funds: {}", e);
+                        app.set_available_funds(slint::ModelRc::new(slint::VecModel::<
+                            slint::SharedString,
+                        >::default(
+                        )));
+                        app.set_available_fund_ids(slint::ModelRc::new(
+                            slint::VecModel::<i32>::default(),
+                        ));
+                    }
                 }
-            }
+            })
+            .unwrap();
+        });
+
+        let app_handle = app.clone_strong();
+        app.on_fetch_usernames(move || {
+            info!("🔍 Fetching usernames from API...");
+            let app = app_handle.clone_strong();
+            let token = token_usernames.clone();
+
+            slint::spawn_local(async move {
+                match donation::fetch_usernames(&token).await {
+                    Ok(value) => {
+                        info!("✅ Fetched {} usernames", value.len());
+
+                        // Convert usernames to string array for the input autocomplete
+                        let model_data: Vec<slint::SharedString> = value
+                            .iter()
+                            .map(|username| slint::SharedString::from(username.to_string()))
+                            .collect();
+
+                        // Set the properties on MainWindow
+                        app.set_usernames(slint::ModelRc::new(slint::VecModel::from(model_data)));
+                    }
+                    Err(e) => {
+                        error!("❌ Failed to fetch usernames: {}", e);
+                        app.set_available_funds(slint::ModelRc::new(slint::VecModel::<
+                            slint::SharedString,
+                        >::default(
+                        )));
+                    }
+                }
+            })
+            .unwrap();
         });
     }
 }

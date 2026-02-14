@@ -1,20 +1,24 @@
 import { LineEdit, Button, Palette, ComboBox } from "std-widgets.slint";
 import { VirtualKeyboardHandler } from "../virtual_keyboard.slint";
+import { AutocompleteLineEdit } from "../autocomplete_line_edit.slint";
 
 export component Donate inherits Rectangle {
     in-out property <string> username: "";
     in property <[string]> fund-items: [];
     in property <[int]> fund-ids: [];
     in-out property <int> selected-fund-index: -1;
+    in property <[string]> username-suggestions: [];
 
     callback fetch-funds();
+    callback fetch-usernames();
 
     init => {
         VirtualKeyboardHandler.open = true;
-        username-input.focus();
+        username-input.set-input-focus();
         
         // fetch funds from backend
         root.fetch-funds();
+        root.fetch-usernames();
         
         // select first fund by default if available
         if (root.fund-items.length > 0) {
@@ -84,28 +88,42 @@ export component Donate inherits Rectangle {
         // username input section
         VerticalLayout {
             spacing: 12px;
-            
+
             Text {
                 text: "Enter your username:";
                 font-size: 18px;
                 color: Palette.foreground;
                 horizontal-alignment: left;
             }
-            
+
             Rectangle {
                 height: 60px;
                 border-radius: 8px;
                 border-width: 2px;
                 border-color: username-input.has-focus ? #4a90e2 : #cccccc;
                 background: Palette.color-scheme == ColorScheme.dark ? #2a2a2a : #ffffff;
-                
-                username-input := LineEdit {
-                    width: 100%;
-                    height: 100%;
-                    text <=> root.username;
-                    placeholder-text: "username";
-                    font-size: 20px;
-                    horizontal-alignment: left;
+
+                HorizontalLayout {
+                    spacing: 0px;
+                    padding-left: 5px;
+
+                    Text {
+                        text: "@";
+                        font-size: 20px;
+                        color: #cccccc;
+                        vertical-alignment: center;
+                        horizontal-stretch: 0;
+                    }
+
+                    username-input := AutocompleteLineEdit {
+                        width: 100%;
+                        height: 100%;
+                        text <=> root.username;
+                        suggestions: root.username-suggestions;
+                        placeholder-text: "username";
+                        font-size: 20px;
+                        horizontal-alignment: left;
+                    }
                 }
             }
         }
@@ -122,7 +140,7 @@ export component Donate inherits Rectangle {
             next-button := Button {
                 text: "Next ➜";
                 primary: true;
-                enabled: root.username != "" && root.selected-fund-index >= 0;
+                enabled: username-input.is-valid && root.selected-fund-index >= 0;
                 width: 350px;
                 height: 120px;
                 
@@ -133,7 +151,5 @@ export component Donate inherits Rectangle {
                 }
             }
         }
-        
-
     }
 }
