@@ -1,0 +1,159 @@
+import { LineEdit, Palette } from "std-widgets.slint";
+
+export global AutocompleteHandler {
+    // Callback to find the best matching suggestion from a list
+    // Returns the matching suggestion or empty string if none found
+    pure callback find-suggestion(/* input */ string, /* suggestions */ [string]) -> string;
+
+    // Get the suffix of suggestion after the typed text
+    pure callback get-suggestion-suffix(/* typed */ string, /* suggestion */ string) -> string;
+
+    // Check if input exactly matches any suggestion (case-insensitive)
+    pure callback is-valid-input(/* input */ string, /* suggestions */ [string]) -> bool;
+
+    // Toggle this property to trigger autocomplete on the active input
+    in-out property <bool> trigger-autocomplete-toggle: false;
+}
+
+export component AutocompleteLineEdit inherits Rectangle {
+    in-out property <string> text: "";
+    in property <[string]> suggestions: [];
+    in property <string> placeholder-text: "username";
+    in property <length> font-size: 16px;
+    in property <TextHorizontalAlignment> horizontal-alignment: left;
+
+    out property <bool> has-focus: inner-input.has-focus;
+    out property <bool> is-valid: false;  // True if text matches a suggestion exactly
+
+    // Internal: store the currently matching suggestion
+    property <string> current-suggestion: "";
+
+    // Cursor blink state
+    property <bool> cursor-visible: true;
+
+    // Track the autocomplete trigger toggle
+    property <bool> autocomplete-trigger: AutocompleteHandler.trigger-autocomplete-toggle;
+
+    callback edited(string);
+    callback accepted(string);
+
+    // Apply autocomplete: set text to the current suggestion
+    public function apply-autocomplete() {
+        if (root.current-suggestion != "") {
+            root.text = root.current-suggestion;
+            root.is-valid = true;  // Autocompleted text is always valid
+            root.current-suggestion = "";
+            inner-input.set-selection-offsets(root.text.character-count, root.text.character-count)
+        }
+    }
+
+
+    // Cursor blink timer
+    cursor-blink-timer := Timer {
+        interval: 530ms;
+        running: root.has-focus;
+        triggered => {
+            root.cursor-visible = !root.cursor-visible;
+        }
+    }
+
+    // Reset cursor visibility when focus changes
+    changed has-focus => {
+        root.cursor-visible = true;
+    }
+
+    // React to autocomplete trigger from virtual keyboard
+    changed autocomplete-trigger => {
+        if (root.has-focus) {
+            root.apply-autocomplete();
+        }
+    }
+
+    forward-focus: inner-input;
+
+    background: transparent;
+
+    // Click to focus the hidden input
+    TouchArea {
+        clicked => {
+            inner-input.focus();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: 2px;
+        padding-right: 2px;
+
+        // Display layer - shows typed text with suggestion
+        VerticalLayout {
+            alignment: center;
+
+            HorizontalLayout {
+                spacing: 0;
+
+                // The actual typed text
+                Text {
+                    text: root.text;
+                    font-size: root.font-size;
+                    color: root.is-valid ? Palette.foreground : #e53935;
+                    vertical-alignment: center;
+                    horizontal-stretch: 0;
+                }
+
+                // Cursor indicator when focused (placed after typed text)
+                cursor := Rectangle {
+                    width: root.has-focus ? 2px : 0;
+                    background: Palette.foreground;
+                    visible: root.has-focus && root.cursor-visible;
+                    horizontal-stretch: 0;
+                }
+
+                // The suggestion suffix (grayed out) - only shown when there's a suggestion
+                if root.current-suggestion != "" : Text {
+                    text: AutocompleteHandler.get-suggestion-suffix(root.text, root.current-suggestion);
+                    font-size: root.font-size;
+                    color: Palette.foreground;
+                    opacity: 0.4;
+                    vertical-alignment: center;
+                    horizontal-stretch: 0;
+                }
+
+                // Placeholder when empty and not focused
+                if root.text == "" && !root.has-focus : Text {
+                    text: root.placeholder-text;
+                    font-size: root.font-size;
+                    color: Palette.foreground;
+                    opacity: 0.5;
+                    vertical-alignment: center;
+                }
+
+                // Spacer
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+            }
+        }
+    }
+
+    // Hidden LineEdit that actually receives input
+    inner-input := LineEdit {
+        y: 1000px;  // Move off-screen
+        text <=> root.text;
+
+        edited(value) => {
+            root.current-suggestion = AutocompleteHandler.find-suggestion(value, root.suggestions);
+            root.is-valid = AutocompleteHandler.is-valid-input(value, root.suggestions);
+            root.edited(value);
+        }
+
+        accepted(value) => {
+            root.apply-autocomplete();
+            root.accepted(root.text);
+        }
+    }
+
+    public function set-input-focus() {
+        inner-input.focus();
+    }
+}
+
