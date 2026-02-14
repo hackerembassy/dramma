@@ -41,7 +41,7 @@ pub fn main() {
     let main_window = MainWindow::new().unwrap();
 
     // Enable fullscreen mode for kiosk deployment
-    // main_window.window().set_fullscreen(true);
+    main_window.window().set_fullscreen(true);
 
     virtual_keyboard::init(&main_window);
     autocomplete_handler::init(&main_window);

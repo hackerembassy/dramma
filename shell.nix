@@ -17,6 +17,7 @@ pkgs.mkShell {
     libXcursor
     libXrandr
     libXi
+    openssl
   ];
 
   shellHook = ''
