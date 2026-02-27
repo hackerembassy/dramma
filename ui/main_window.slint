@@ -108,9 +108,5 @@ export component MainWindow inherits Window {
                 root.current-page = Page.Main;
             }
         }
-
-        keyboard := VirtualKeyboard {
-            y: VirtualKeyboardHandler.open ? parent.height - self.height : parent.height;
-        }
     }
 }

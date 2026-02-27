@@ -1,3 +1,4 @@
+import { VirtualKeyboardHandler, VirtualKeyboard, KeyModel } from "../virtual_keyboard.slint";
 import { LineEdit, Button, Palette, ComboBox } from "std-widgets.slint";
 import { VirtualKeyboardHandler } from "../virtual_keyboard.slint";
 import { AutocompleteLineEdit } from "../autocomplete_line_edit.slint";
@@ -15,43 +16,42 @@ export component Donate inherits Rectangle {
     init => {
         VirtualKeyboardHandler.open = true;
         username-input.set-input-focus();
-        
+
         // fetch funds from backend
         root.fetch-funds();
         root.fetch-usernames();
-        
+
         // select first fund by default if available
         if (root.fund-items.length > 0) {
             root.selected-fund-index = 0;
         }
     }
-    
-    
+
     callback next-clicked(string, int);  // username, fund_id
     callback back-clicked();
-    
+
     background: Palette.background;
-    
+
     VerticalLayout {
         alignment: start;
         padding: 32px;
         spacing: 24px;
-        
+
         // back button
         HorizontalLayout {
             alignment: start;
-            
+
             Button {
                 text: "← Back";
                 width: 150px;
                 height: 60px;
-                
+
                 clicked => {
                     root.back-clicked();
                 }
             }
         }
-        
+
         // header
         Text {
             text: "Make a Donation";
@@ -60,23 +60,23 @@ export component Donate inherits Rectangle {
             color: Palette.foreground;
             horizontal-alignment: center;
         }
-        
+
         // spacer
         Rectangle {
             height: 20px;
         }
-        
+
         // fund selector section
         VerticalLayout {
             spacing: 12px;
-            
+
             Text {
                 text: "Select fund:";
                 font-size: 18px;
                 color: Palette.foreground;
                 horizontal-alignment: left;
             }
-            
+
             fund-selector := ComboBox {
                 model: root.fund-items;
                 current-index <=> root.selected-fund-index;
@@ -84,7 +84,7 @@ export component Donate inherits Rectangle {
                 height: 60px;
             }
         }
-        
+
         // username input section
         VerticalLayout {
             spacing: 12px;
@@ -127,23 +127,23 @@ export component Donate inherits Rectangle {
                 }
             }
         }
-        
+
         // spacer to push button to bottom
         Rectangle {
             vertical-stretch: 1;
         }
-        
+
         // next button
         HorizontalLayout {
             alignment: center;
-            
+
             next-button := Button {
                 text: "Next ➜";
                 primary: true;
                 enabled: username-input.is-valid && root.selected-fund-index >= 0;
                 width: 350px;
                 height: 120px;
-                
+
                 clicked => {
                     if (root.selected-fund-index >= 0 && root.selected-fund-index < root.fund-ids.length) {
                         root.next-clicked(root.username, root.fund-ids[root.selected-fund-index]);
@@ -151,5 +151,9 @@ export component Donate inherits Rectangle {
                 }
             }
         }
+    }
+
+    keyboard := VirtualKeyboard {
+        y: VirtualKeyboardHandler.open ? parent.height - self.height : parent.height;
     }
 }
