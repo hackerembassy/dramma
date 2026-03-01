@@ -47,6 +47,12 @@ export component AutocompleteLineEdit inherits Rectangle {
         }
     }
 
+    public function set-text(text: string) {
+        inner-input.text = self.text;
+        inner-input.edited(text);
+        inner-input.set-selection-offsets(0, root.text.character-count);
+    }
+
 
     // Cursor blink timer
     cursor-blink-timer := Timer {
@@ -109,7 +115,7 @@ export component AutocompleteLineEdit inherits Rectangle {
                 }
 
                 // The suggestion suffix (grayed out) - only shown when there's a suggestion
-                if root.current-suggestion != "" : Text {
+                if root.current-suggestion != "": Text {
                     text: AutocompleteHandler.get-suggestion-suffix(root.text, root.current-suggestion);
                     font-size: root.font-size;
                     color: Palette.foreground;
@@ -119,7 +125,7 @@ export component AutocompleteLineEdit inherits Rectangle {
                 }
 
                 // Placeholder when empty and not focused
-                if root.text == "" && !root.has-focus : Text {
+                if root.text == "" && !root.has-focus: Text {
                     text: root.placeholder-text;
                     font-size: root.font-size;
                     color: Palette.foreground;
@@ -156,4 +162,3 @@ export component AutocompleteLineEdit inherits Rectangle {
         inner-input.focus();
     }
 }
-

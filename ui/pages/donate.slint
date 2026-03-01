@@ -2,6 +2,7 @@ import { VirtualKeyboardHandler, VirtualKeyboard, KeyModel } from "../virtual_ke
 import { LineEdit, Button, Palette, ComboBox } from "std-widgets.slint";
 import { VirtualKeyboardHandler } from "../virtual_keyboard.slint";
 import { AutocompleteLineEdit } from "../autocomplete_line_edit.slint";
+import { Icons } from "../icons.slint";
 
 export component Donate inherits Rectangle {
     in-out property <string> username: "";
@@ -89,11 +90,15 @@ export component Donate inherits Rectangle {
         VerticalLayout {
             spacing: 12px;
 
-            Text {
-                text: "Enter your username:";
-                font-size: 18px;
-                color: Palette.foreground;
-                horizontal-alignment: left;
+            HorizontalLayout {
+                alignment: start;
+
+                Text {
+                    text: "Enter your username:";
+                    font-size: 18px;
+                    color: Palette.foreground;
+                    horizontal-alignment: left;
+                }
             }
 
             Rectangle {
@@ -135,7 +140,23 @@ export component Donate inherits Rectangle {
 
         // next button
         HorizontalLayout {
-            alignment: center;
+            alignment: LayoutAlignment.space-between;
+
+            anon-button := Button {
+                icon: Icons.guy-fawkes;
+                text: "Anonymous";
+                width: 350px;
+                height: 120px;
+
+                enabled: root.username != "anon";
+
+                clicked => {
+                    if root.username != "anon" {
+                        root.username = "anon";
+                        username-input.set-text("anon");
+                    }
+                }
+            }
 
             next-button := Button {
                 text: "Next ➜";
