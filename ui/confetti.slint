@@ -1,0 +1,580 @@
+import { Palette } from "std-widgets.slint";
+
+component ConfettiPiece inherits Image {
+    in property <bool> active: false;
+    in property <length> start-x: 620px;
+    in property <length> start-y: 960px;
+    in property <length> end-x: 0px;
+    in property <length> end-y: 0px;
+    in property <duration> anim-delay: 0ms;
+    in property <duration> anim-duration: 750ms;
+    in property <angle> target-angle: 720deg;
+    in property <brush> piece-color: #FF6B6B;
+
+    x: active ? end-x : start-x;
+    y: active ? end-y : start-y;
+    colorize: piece-color;
+    opacity: active ? 0.0 : 1.0;
+    rotation-angle: active ? target-angle : 0deg;
+    rotation-origin-x: self.width / 2;
+    rotation-origin-y: self.height / 2;
+
+    animate x {
+        duration: anim-duration;
+        delay: anim-delay;
+        easing: ease-out;
+    }
+
+    animate y {
+        duration: anim-duration;
+        delay: anim-delay;
+        easing: ease-out;
+    }
+
+    animate opacity {
+        duration: anim-duration;
+        delay: anim-delay;
+        easing: cubic-bezier(0.7, 0.0, 1.0, 1.0);
+    }
+
+    animate rotation-angle {
+        duration: anim-duration;
+        delay: anim-delay;
+        easing: linear;
+    }
+}
+
+export component ConfettiOverlay inherits Rectangle {
+    in property <bool> falling: false;
+
+    background: transparent;
+
+    // Thank-you card — centered
+    Rectangle {
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        width: 520px;
+        height: 200px;
+        border-radius: 24px;
+        background: Palette.color-scheme == ColorScheme.dark ? #2a2a2aee : #ffffffee;
+        drop-shadow-blur: 20px;
+        drop-shadow-color: #00000044;
+        opacity: root.falling ? 1.0 : 0.0;
+
+        animate opacity {
+            duration: 400ms;
+            easing: ease-out;
+        }
+
+        VerticalLayout {
+            alignment: center;
+
+            Text {
+                text: "Thank You! 🎉";
+                font-size: 52px;
+                font-weight: 800;
+                color: Palette.foreground;
+                horizontal-alignment: center;
+            }
+        }
+    }
+
+    // ── Fountain confetti — bursts upward from bottom center ─────────
+    // Far-left arc
+    ConfettiPiece {
+        source: @image-url("assets/confetti-star.svg");
+        active: root.falling;
+        start-x: 615px;
+        start-y: 960px;
+        end-x: 30px;
+        end-y: 250px;
+        anim-delay: 50ms;
+        piece-color: #FF6B6B;
+        width: 20px;
+        height: 20px;
+        target-angle: 540deg;
+    }
+
+    ConfettiPiece {
+        source: @image-url("assets/confetti-circle.svg");
+        active: root.falling;
+        start-x: 620px;
+        start-y: 955px;
+        end-x: 90px;
+        end-y: 140px;
+        anim-delay: 0ms;
+        piece-color: #4ECDC4;
+        width: 16px;
+        height: 16px;
+        target-angle: -720deg;
+    }
+
+    ConfettiPiece {
+        source: @image-url("assets/confetti-diamond.svg");
+        active: root.falling;
+        start-x: 618px;
+        start-y: 965px;
+        end-x: 150px;
+        end-y: 380px;
+        anim-delay: 100ms;
+        piece-color: #FFE66D;
+        width: 18px;
+        height: 18px;
+        target-angle: 360deg;
+    }
+
+    // Left arc
+    ConfettiPiece {
+        source: @image-url("assets/confetti-heart.svg");
+        active: root.falling;
+        start-x: 622px;
+        start-y: 958px;
+        end-x: 200px;
+        end-y: 110px;
+        anim-delay: 30ms;
+        piece-color: #AA96DA;
+        width: 18px;
+        height: 18px;
+        target-angle: -540deg;
+    }
+
+    ConfettiPiece {
+        source: @image-url("assets/confetti-triangle.svg");
+        active: root.falling;
+        start-x: 625px;
+        start-y: 962px;
+        end-x: 260px;
+        end-y: 290px;
+        anim-delay: 150ms;
+        piece-color: #F38181;
+        width: 16px;
+        height: 16px;
+        target-angle: 900deg;
+    }
+
+    ConfettiPiece {
+        source: @image-url("assets/confetti-star.svg");
+        active: root.falling;
+        start-x: 620px;
+        start-y: 950px;
+        end-x: 310px;
+        end-y: 70px;
+        anim-delay: 80ms;
+        piece-color: #74B9FF;
+        width: 20px;
+        height: 20px;
+        target-angle: -360deg;
+    }
+
+    ConfettiPiece {
+        source: @image-url("assets/confetti-circle.svg");
+        active: root.falling;
+        start-x: 628px;
+        start-y: 968px;
+        end-x: 350px;
+        end-y: 210px;
+        anim-delay: 200ms;
+        piece-color: #A8E6CF;
+        width: 14px;
+        height: 14px;
+        target-angle: 720deg;
+    }
+
+    // Left-center arc
+    ConfettiPiece {
+        source: @image-url("assets/confetti-diamond.svg");
+        active: root.falling;
+        start-x: 630px;
+        start-y: 955px;
+        end-x: 390px;
+        end-y: 40px;
+        anim-delay: 20ms;
+        piece-color: #FF8B94;
+        width: 18px;
+        height: 18px;
+        target-angle: -900deg;
+    }
+
+    ConfettiPiece {
+        source: @image-url("assets/confetti-heart.svg");
+        active: root.falling;
+        start-x: 632px;
+        start-y: 960px;
+        end-x: 440px;
+        end-y: 170px;
+        anim-delay: 120ms;
+        piece-color: #FDCB6E;
+        width: 16px;
+        height: 16px;
+        target-angle: 540deg;
+    }
+
+    ConfettiPiece {
+        source: @image-url("assets/confetti-triangle.svg");
+        active: root.falling;
+        start-x: 635px;
+        start-y: 958px;
+        end-x: 480px;
+        end-y: 90px;
+        anim-delay: 60ms;
+        piece-color: #FCB69F;
+        width: 20px;
+        height: 20px;
+        target-angle: -360deg;
+    }
+
+    ConfettiPiece {
+        source: @image-url("assets/confetti-star.svg");
+        active: root.falling;
+        start-x: 633px;
+        start-y: 963px;
+        end-x: 530px;
+        end-y: 260px;
+        anim-delay: 180ms;
+        piece-color: #4ECDC4;
+        width: 16px;
+        height: 16px;
+        target-angle: 720deg;
+    }
+
+    ConfettiPiece {
+        source: @image-url("assets/confetti-circle.svg");
+        active: root.falling;
+        start-x: 638px;
+        start-y: 952px;
+        end-x: 570px;
+        end-y: 50px;
+        anim-delay: 10ms;
+        piece-color: #FF6B6B;
+        width: 18px;
+        height: 18px;
+        target-angle: -540deg;
+    }
+
+    // Center — shoots highest
+    ConfettiPiece {
+        source: @image-url("assets/confetti-diamond.svg");
+        active: root.falling;
+        start-x: 636px;
+        start-y: 965px;
+        end-x: 590px;
+        end-y: 20px;
+        anim-delay: 0ms;
+        piece-color: #FFE66D;
+        width: 22px;
+        height: 22px;
+        target-angle: 900deg;
+    }
+
+    ConfettiPiece {
+        source: @image-url("assets/confetti-heart.svg");
+        active: root.falling;
+        start-x: 640px;
+        start-y: 958px;
+        end-x: 625px;
+        end-y: 60px;
+        anim-delay: 40ms;
+        piece-color: #AA96DA;
+        width: 20px;
+        height: 20px;
+        target-angle: -720deg;
+    }
+
+    ConfettiPiece {
+        source: @image-url("assets/confetti-star.svg");
+        active: root.falling;
+        start-x: 642px;
+        start-y: 955px;
+        end-x: 660px;
+        end-y: 15px;
+        anim-delay: 0ms;
+        piece-color: #F38181;
+        width: 24px;
+        height: 24px;
+        target-angle: 540deg;
+    }
+
+    ConfettiPiece {
+        source: @image-url("assets/confetti-triangle.svg");
+        active: root.falling;
+        start-x: 645px;
+        start-y: 962px;
+        end-x: 700px;
+        end-y: 40px;
+        anim-delay: 70ms;
+        piece-color: #74B9FF;
+        width: 20px;
+        height: 20px;
+        target-angle: -360deg;
+    }
+
+    ConfettiPiece {
+        source: @image-url("assets/confetti-circle.svg");
+        active: root.falling;
+        start-x: 638px;
+        start-y: 960px;
+        end-x: 640px;
+        end-y: 80px;
+        anim-delay: 20ms;
+        piece-color: #A8E6CF;
+        width: 18px;
+        height: 18px;
+        target-angle: 720deg;
+    }
+
+    // Right-center arc
+    ConfettiPiece {
+        source: @image-url("assets/confetti-star.svg");
+        active: root.falling;
+        start-x: 648px;
+        start-y: 957px;
+        end-x: 730px;
+        end-y: 55px;
+        anim-delay: 10ms;
+        piece-color: #FF8B94;
+        width: 18px;
+        height: 18px;
+        target-angle: 540deg;
+    }
+
+    ConfettiPiece {
+        source: @image-url("assets/confetti-diamond.svg");
+        active: root.falling;
+        start-x: 645px;
+        start-y: 963px;
+        end-x: 770px;
+        end-y: 260px;
+        anim-delay: 180ms;
+        piece-color: #FDCB6E;
+        width: 16px;
+        height: 16px;
+        target-angle: -720deg;
+    }
+
+    ConfettiPiece {
+        source: @image-url("assets/confetti-heart.svg");
+        active: root.falling;
+        start-x: 650px;
+        start-y: 955px;
+        end-x: 820px;
+        end-y: 90px;
+        anim-delay: 60ms;
+        piece-color: #FCB69F;
+        width: 20px;
+        height: 20px;
+        target-angle: 360deg;
+    }
+
+    ConfettiPiece {
+        source: @image-url("assets/confetti-triangle.svg");
+        active: root.falling;
+        start-x: 647px;
+        start-y: 960px;
+        end-x: 860px;
+        end-y: 170px;
+        anim-delay: 120ms;
+        piece-color: #FF6B6B;
+        width: 16px;
+        height: 16px;
+        target-angle: -900deg;
+    }
+
+    ConfettiPiece {
+        source: @image-url("assets/confetti-circle.svg");
+        active: root.falling;
+        start-x: 652px;
+        start-y: 958px;
+        end-x: 910px;
+        end-y: 40px;
+        anim-delay: 20ms;
+        piece-color: #4ECDC4;
+        width: 18px;
+        height: 18px;
+        target-angle: 540deg;
+    }
+
+    // Right arc
+    ConfettiPiece {
+        source: @image-url("assets/confetti-diamond.svg");
+        active: root.falling;
+        start-x: 650px;
+        start-y: 965px;
+        end-x: 950px;
+        end-y: 210px;
+        anim-delay: 200ms;
+        piece-color: #FFE66D;
+        width: 14px;
+        height: 14px;
+        target-angle: -720deg;
+    }
+
+    ConfettiPiece {
+        source: @image-url("assets/confetti-star.svg");
+        active: root.falling;
+        start-x: 655px;
+        start-y: 950px;
+        end-x: 990px;
+        end-y: 70px;
+        anim-delay: 80ms;
+        piece-color: #AA96DA;
+        width: 20px;
+        height: 20px;
+        target-angle: 360deg;
+    }
+
+    ConfettiPiece {
+        source: @image-url("assets/confetti-heart.svg");
+        active: root.falling;
+        start-x: 652px;
+        start-y: 962px;
+        end-x: 1040px;
+        end-y: 290px;
+        anim-delay: 150ms;
+        piece-color: #F38181;
+        width: 16px;
+        height: 16px;
+        target-angle: -540deg;
+    }
+
+    ConfettiPiece {
+        source: @image-url("assets/confetti-triangle.svg");
+        active: root.falling;
+        start-x: 658px;
+        start-y: 958px;
+        end-x: 1090px;
+        end-y: 110px;
+        anim-delay: 30ms;
+        piece-color: #74B9FF;
+        width: 18px;
+        height: 18px;
+        target-angle: 900deg;
+    }
+
+    // Far-right arc
+    ConfettiPiece {
+        source: @image-url("assets/confetti-circle.svg");
+        active: root.falling;
+        start-x: 655px;
+        start-y: 965px;
+        end-x: 1130px;
+        end-y: 380px;
+        anim-delay: 100ms;
+        piece-color: #A8E6CF;
+        width: 18px;
+        height: 18px;
+        target-angle: -360deg;
+    }
+
+    ConfettiPiece {
+        source: @image-url("assets/confetti-star.svg");
+        active: root.falling;
+        start-x: 660px;
+        start-y: 955px;
+        end-x: 1190px;
+        end-y: 140px;
+        anim-delay: 0ms;
+        piece-color: #FF8B94;
+        width: 16px;
+        height: 16px;
+        target-angle: 720deg;
+    }
+
+    ConfettiPiece {
+        source: @image-url("assets/confetti-diamond.svg");
+        active: root.falling;
+        start-x: 662px;
+        start-y: 960px;
+        end-x: 1240px;
+        end-y: 250px;
+        anim-delay: 50ms;
+        piece-color: #FDCB6E;
+        width: 20px;
+        height: 20px;
+        target-angle: -540deg;
+    }
+
+    // Second wave — fills in the gaps
+    ConfettiPiece {
+        source: @image-url("assets/confetti-heart.svg");
+        active: root.falling;
+        start-x: 625px;
+        start-y: 970px;
+        end-x: 120px;
+        end-y: 450px;
+        anim-delay: 250ms;
+        piece-color: #FCB69F;
+        width: 16px;
+        height: 16px;
+        target-angle: 720deg;
+    }
+
+    ConfettiPiece {
+        source: @image-url("assets/confetti-triangle.svg");
+        active: root.falling;
+        start-x: 630px;
+        start-y: 968px;
+        end-x: 340px;
+        end-y: 340px;
+        anim-delay: 300ms;
+        piece-color: #74B9FF;
+        width: 18px;
+        height: 18px;
+        target-angle: -540deg;
+    }
+
+    ConfettiPiece {
+        source: @image-url("assets/confetti-star.svg");
+        active: root.falling;
+        start-x: 640px;
+        start-y: 965px;
+        end-x: 550px;
+        end-y: 150px;
+        anim-delay: 280ms;
+        piece-color: #AA96DA;
+        width: 20px;
+        height: 20px;
+        target-angle: 900deg;
+    }
+
+    ConfettiPiece {
+        source: @image-url("assets/confetti-circle.svg");
+        active: root.falling;
+        start-x: 645px;
+        start-y: 965px;
+        end-x: 730px;
+        end-y: 150px;
+        anim-delay: 280ms;
+        piece-color: #FF6B6B;
+        width: 20px;
+        height: 20px;
+        target-angle: -360deg;
+    }
+
+    ConfettiPiece {
+        source: @image-url("assets/confetti-diamond.svg");
+        active: root.falling;
+        start-x: 650px;
+        start-y: 968px;
+        end-x: 940px;
+        end-y: 340px;
+        anim-delay: 300ms;
+        piece-color: #FFE66D;
+        width: 18px;
+        height: 18px;
+        target-angle: 540deg;
+    }
+
+    ConfettiPiece {
+        source: @image-url("assets/confetti-heart.svg");
+        active: root.falling;
+        start-x: 658px;
+        start-y: 970px;
+        end-x: 1160px;
+        end-y: 450px;
+        anim-delay: 250ms;
+        piece-color: #F38181;
+        width: 16px;
+        height: 16px;
+        target-angle: -720deg;
+    }
+}

@@ -444,6 +444,30 @@ mod donation_handler {
                 }
             }
         });
+
+        // Drive confetti animation from Rust with a two-step approach:
+        // 1. show-confetti is already set to true by the Slint side (overlay is created)
+        // 2. After a brief delay, set confetti-falling = true (triggers the animations)
+        // 3. After animation completes, reset both properties
+        let weak = app.as_weak();
+        app.on_confetti_started(move || {
+            // Step 1: trigger falling after a short delay so the component is fully rendered
+            let weak_fall = weak.clone();
+            slint::Timer::single_shot(std::time::Duration::from_millis(50), move || {
+                if let Some(window) = weak_fall.upgrade() {
+                    window.set_confetti_falling(true);
+                }
+            });
+
+            // Step 2: dismiss everything after animations complete
+            let weak_dismiss = weak.clone();
+            slint::Timer::single_shot(std::time::Duration::from_millis(2500), move || {
+                if let Some(window) = weak_dismiss.upgrade() {
+                    window.set_confetti_falling(false);
+                    window.set_show_confetti(false);
+                }
+            });
+        });
     }
 }
 
