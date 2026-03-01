@@ -1,0 +1,33 @@
+use std::thread;
+
+const CHACHING_WAV: &[u8] = include_bytes!("../ui/assets/chaching.wav");
+
+/// Plays the cha-ching sound via `aplay` in a background thread.
+pub fn play_chaching() {
+    thread::spawn(|| {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        let mut child = match Command::new("aplay")
+            .args(["-q", "-"])
+            .stdin(Stdio::piped())
+            .spawn()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                log::error!("Failed to spawn aplay: {}", e);
+                return;
+            }
+        };
+
+        if let Some(stdin) = child.stdin.as_mut() {
+            if let Err(e) = stdin.write_all(CHACHING_WAV) {
+                log::error!("Failed to write WAV data to aplay: {}", e);
+            }
+        }
+
+        if let Err(e) = child.wait() {
+            log::error!("aplay exited with error: {}", e);
+        }
+    });
+}
