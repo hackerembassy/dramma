@@ -470,6 +470,25 @@ mod donation_handler {
                 }
             });
         });
+
+        // Warmup: run the animation once at startup (no sound) so all SVGs are
+        // rasterized and cached before the first real donation triggers it.
+        let weak_warmup = app.as_weak();
+        slint::Timer::single_shot(std::time::Duration::from_millis(500), move || {
+            if let Some(window) = weak_warmup.upgrade() {
+                info!("🎉 Warming up confetti cache...");
+                window.set_show_confetti(true);
+                window.set_confetti_falling(true);
+
+                let weak_done = weak_warmup.clone();
+                slint::Timer::single_shot(std::time::Duration::from_millis(1000), move || {
+                    if let Some(window) = weak_done.upgrade() {
+                        window.set_confetti_falling(false);
+                        window.set_show_confetti(false);
+                    }
+                });
+            }
+        });
     }
 }
 
