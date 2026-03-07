@@ -1,9 +1,9 @@
 use std::thread;
 
-const CHACHING_WAV: &[u8] = include_bytes!("../ui/assets/chaching.wav");
+const YIPPEE_WAV: &[u8] = include_bytes!("../ui/assets/yippee.wav");
 
-/// Plays the cha-ching sound via `aplay` in a background thread.
-pub fn play_chaching() {
+/// Plays the sound via `aplay` in a background thread.
+pub fn play_yippee() {
     thread::spawn(|| {
         use std::io::Write;
         use std::process::{Command, Stdio};
@@ -21,7 +21,7 @@ pub fn play_chaching() {
         };
 
         if let Some(stdin) = child.stdin.as_mut() {
-            if let Err(e) = stdin.write_all(CHACHING_WAV) {
+            if let Err(e) = stdin.write_all(YIPPEE_WAV) {
                 log::error!("Failed to write WAV data to aplay: {}", e);
             }
         }

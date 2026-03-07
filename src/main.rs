@@ -452,7 +452,7 @@ mod donation_handler {
         // 3. After animation completes, reset both properties
         let weak = app.as_weak();
         app.on_confetti_started(move || {
-            crate::sound::play_chaching();
+            crate::sound::play_yippee();
             // Step 1: trigger falling after a short delay so the component is fully rendered
             let weak_fall = weak.clone();
             slint::Timer::single_shot(std::time::Duration::from_millis(50), move || {
