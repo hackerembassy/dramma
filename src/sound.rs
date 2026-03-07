@@ -20,10 +20,10 @@ pub fn play_yippee() {
             }
         };
 
-        if let Some(stdin) = child.stdin.as_mut() {
-            if let Err(e) = stdin.write_all(YIPPEE_WAV) {
-                log::error!("Failed to write WAV data to aplay: {}", e);
-            }
+        if let Some(stdin) = child.stdin.as_mut()
+            && let Err(e) = stdin.write_all(YIPPEE_WAV)
+        {
+            log::error!("Failed to write WAV data to aplay: {}", e);
         }
 
         if let Err(e) = child.wait() {
