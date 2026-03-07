@@ -30,7 +30,9 @@ pub fn main() {
     sound::init();
 
     // Test
-    sound::play_yippee();
+    for _ in 0..5 {
+        sound::play_yippee();
+    }
 
     // Load config
     let config = match Config::load() {

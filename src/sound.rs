@@ -26,24 +26,16 @@ pub fn init() {
             let mixer = handle.mixer();
 
             while rx.recv().is_ok() {
-                let players: Vec<Player> = (0..5)
-                    .filter_map(|_| {
-                        let source = match Decoder::try_from(Cursor::new(YIPPEE_WAV)) {
-                            Ok(s) => s,
-                            Err(e) => {
-                                log::error!("Failed to decode WAV: {}", e);
-                                return None;
-                            }
-                        };
-                        let player = Player::connect_new(&mixer);
-                        player.append(source);
-                        Some(player)
-                    })
-                    .collect();
-
-                if let Some(last) = players.last() {
-                    last.sleep_until_end();
-                }
+                let source = match Decoder::try_from(Cursor::new(YIPPEE_WAV)) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        log::error!("Failed to decode WAV: {}", e);
+                        continue;
+                    }
+                };
+                let player = Player::connect_new(&mixer);
+                player.append(source);
+                player.sleep_until_end();
             }
         });
 
@@ -51,7 +43,8 @@ pub fn init() {
     });
 }
 
-/// Plays 5 yippee sounds simultaneously. Requires `init()` to have been called at startup.
+/// Plays the yippee sound.
+/// Requires `init()` to have been called at startup.
 pub fn play_yippee() {
     match AUDIO_TX.get() {
         Some(tx) => {
@@ -62,5 +55,3 @@ pub fn play_yippee() {
         None => log::error!("Audio not initialized — call sound::init() at startup"),
     }
 }
-
-
