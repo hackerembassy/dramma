@@ -38,7 +38,8 @@ jobs:
             libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
             libxkbcommon-dev \
             libudev-dev \
-            libcurl4-openssl-dev
+            libcurl4-openssl-dev \
+            libasound2-dev
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --all-features
@@ -57,7 +58,8 @@ jobs:
             libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
             libxkbcommon-dev \
             libudev-dev \
-            libcurl4-openssl-dev
+            libcurl4-openssl-dev \
+            libasound2-dev
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -131,7 +133,8 @@ jobs:
             libxkbcommon0 \
             libudev1 \
             libcurl4 \
-            libstdc++6"
+            libstdc++6 \
+            libasound2"
 
       - name: Deploy binary
         run: |

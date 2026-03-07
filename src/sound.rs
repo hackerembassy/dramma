@@ -1,39 +1,42 @@
+use std::io::Cursor;
 use std::thread;
+
+use rodio::{Decoder, DeviceSinkBuilder, Player};
 
 const YIPPEE_WAV: &[u8] = include_bytes!("../ui/assets/yippee.wav");
 
-fn spawn_yippee() {
+/// Plays 5 yippee sounds simultaneously through ALSA via rodio.
+pub fn play_yippee() {
     thread::spawn(|| {
-        use std::io::Write;
-        use std::process::{Command, Stdio};
-
-        let mut child = match Command::new("aplay")
-            .args(["-q", "-"])
-            .stdin(Stdio::piped())
-            .spawn()
-        {
-            Ok(c) => c,
+        let handle = match DeviceSinkBuilder::open_default_sink() {
+            Ok(h) => h,
             Err(e) => {
-                log::error!("Failed to spawn aplay: {}", e);
+                log::error!("Failed to open audio output: {}", e);
                 return;
             }
         };
 
-        if let Some(stdin) = child.stdin.as_mut()
-            && let Err(e) = stdin.write_all(YIPPEE_WAV)
-        {
-            log::error!("Failed to write WAV data to aplay: {}", e);
-        }
+        let mixer = handle.mixer();
 
-        if let Err(e) = child.wait() {
-            log::error!("aplay exited with error: {}", e);
+        let players: Vec<Player> = (0..5)
+            .filter_map(|_| {
+                let source = match Decoder::try_from(Cursor::new(YIPPEE_WAV)) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        log::error!("Failed to decode WAV: {}", e);
+                        return None;
+                    }
+                };
+                let player = Player::connect_new(&mixer);
+                player.append(source);
+                Some(player)
+            })
+            .collect();
+
+        if let Some(last) = players.last() {
+            last.sleep_until_end();
         }
     });
 }
 
-/// Plays 5 yippee sounds simultaneously in parallel background threads.
-pub fn play_yippee() {
-    for _ in 0..5 {
-        spawn_yippee();
-    }
-}
+

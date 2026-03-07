@@ -27,6 +27,9 @@ pub fn main() {
 
     info!("Starting :3");
 
+    // Test
+    sound::play_yippee();
+
     // Load config
     let config = match Config::load() {
         Ok(config) => config,
@@ -435,7 +438,10 @@ mod donation_handler {
                     slint::spawn_local(async move {
                         match donation::send_donation(&token, fund_id, &username_str, amount).await
                         {
-                            Ok(_) => info!("✅ Donation sent successfully!"),
+                            Ok(_) => {
+                                sound::play_yippee();
+                                info!("✅ Donation sent successfully!");
+                            }
                             Err(e) => error!("❌ Failed to send donation: {}", e),
                         }
                     })
