@@ -17,15 +17,23 @@ export component InsertMoney inherits Rectangle {
         HorizontalLayout {
             alignment: start;
             
-            Button {
+            if root.current-amount == 0: Button {
                 text: "← Cancel";
                 width: 150px;
                 height: 60px;
-                enabled: root.current-amount == 0;
-                
+
                 clicked => {
                     root.cancel-clicked();
                 }
+            }
+
+            if root.current-amount > 0: Text {
+                text: "🔒 Cannot cancel after inserting money";
+                font-size: 16px;
+                color: Palette.foreground;
+                opacity: 0.5;
+                vertical-alignment: center;
+                height: 60px;
             }
         }
         
