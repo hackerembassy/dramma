@@ -5,8 +5,10 @@
 import { Button, Palette } from "std-widgets.slint";
 
 import { Icons } from "icons.slint";
+import { AutocompleteHandler } from "autocomplete_line_edit.slint";
 
 component VirtualKeyboardButton {
+    in property <bool> active;
     in property <string> key;
     in property <image> icon;
 
@@ -24,7 +26,7 @@ component VirtualKeyboardButton {
 
     i-container := Rectangle {
         border-radius: 4px;
-        background: Palette.color-scheme == ColorScheme.dark ? #373737 : #ffffff;
+        background: Palette.color-scheme == ColorScheme.dark ? root.active ? Palette.accent-background : #373737 : root.active ? Palette.accent-background : #ffffff;
 
         HorizontalLayout {
             padding: 8px;
@@ -224,6 +226,7 @@ export component VirtualKeyboard {
 
             if (index == 1): VirtualKeyboardButton {
                 icon: Icons.arrow-circle-o-left;
+                active: AutocompleteHandler.return-key-active;
 
                 key-pressed => {
                     VirtualKeyboardHandler.key-pressed(Key.Return);
