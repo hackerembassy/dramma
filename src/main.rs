@@ -27,6 +27,8 @@ pub fn main() {
 
     info!("Starting :3");
 
+    sound::init();
+
     // Test
     sound::play_yippee();
 
