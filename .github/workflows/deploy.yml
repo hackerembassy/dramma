@@ -143,7 +143,9 @@ jobs:
 
       - name: Deploy configuration
         run: |
-          scp .config/dramma.toml root@${{ env.DRAMMA_HOST }}:${{ env.REMOTE_DIR }}/.config/
+          ssh root@${{ env.DRAMMA_HOST }} "cat > ${{ env.REMOTE_DIR }}/.config/dramma.toml" << 'EOF'
+          token = "${{ secrets.DRAMMA_TOKEN }}"
+          EOF
           ssh root@${{ env.DRAMMA_HOST }} \
             "chown ${{ env.DRAMMA_USER }}:${{ env.DRAMMA_USER }} ${{ env.REMOTE_DIR }}/.config/dramma.toml"
 
