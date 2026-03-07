@@ -2,8 +2,7 @@ use std::thread;
 
 const YIPPEE_WAV: &[u8] = include_bytes!("../ui/assets/yippee.wav");
 
-/// Plays the sound via `aplay` in a background thread.
-pub fn play_yippee() {
+fn spawn_yippee() {
     thread::spawn(|| {
         use std::io::Write;
         use std::process::{Command, Stdio};
@@ -30,4 +29,11 @@ pub fn play_yippee() {
             log::error!("aplay exited with error: {}", e);
         }
     });
+}
+
+/// Plays 5 yippee sounds simultaneously in parallel background threads.
+pub fn play_yippee() {
+    for _ in 0..5 {
+        spawn_yippee();
+    }
 }
