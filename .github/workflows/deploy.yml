@@ -98,7 +98,8 @@ jobs:
             --login-server=https://tail.hackem.cc \
             --authkey=${{ secrets.TS_AUTHKEY }} \
             --hostname=github-actions \
-            --timeout=30s
+            --timeout=30s \
+            --accept-routes
           echo "Tailscale status:"
           sudo tailscale status
           echo "Ping dramma.lan:"
