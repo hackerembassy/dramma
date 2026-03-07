@@ -90,11 +90,19 @@ jobs:
           path: target/release/
 
       - name: Connect to Tailscale
-        uses: tailscale/github-action@v2
-        with:
-          args: --login-server=https://tail.hackem.cc
-          authkey: ${{ secrets.TS_AUTHKEY }}
-          tags: tag:ci
+        run: |
+          curl -fsSL https://tailscale.com/install.sh | sh
+          sudo tailscaled --state=/tmp/tailscaled.state &
+          sleep 3
+          sudo tailscale up \
+            --login-server=https://tail.hackem.cc \
+            --authkey=${{ secrets.TS_AUTHKEY }} \
+            --hostname=github-actions \
+            --timeout=30s
+          echo "Tailscale status:"
+          sudo tailscale status
+          echo "Ping dramma.lan:"
+          sudo tailscale ping dramma.lan || ping -c3 dramma.lan
 
       - name: Set up SSH
         run: |
