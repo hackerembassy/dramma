@@ -45,6 +45,14 @@ export component InsertMoney inherits Rectangle {
             color: Palette.foreground;
             horizontal-alignment: center;
         }
+
+        Text {
+            text: "Donating as @" + root.username;
+            font-size: 20px;
+            color: Palette.foreground;
+            opacity: 0.7;
+            horizontal-alignment: center;
+        }
         
         // spacer
         Rectangle {

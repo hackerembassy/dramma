@@ -50,9 +50,6 @@ export component MainWindow inherits Window {
     Rectangle {
         if current-page == Page.Main: Main {
             donate-clicked => {
-                // root.current-page = Page.Donate;
-                root.show-confetti = true;  // TEST: trigger confetti on DONATE press
-                root.confetti-started();
                 root.current-page = Page.Donate;
             }
 
