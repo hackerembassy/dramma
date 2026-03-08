@@ -33,7 +33,7 @@ pub fn init() {
                         continue;
                     }
                 };
-                let player = Player::connect_new(&mixer);
+                let player = Player::connect_new(mixer);
                 player.append(source);
                 player.sleep_until_end();
             }
