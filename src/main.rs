@@ -9,6 +9,7 @@ mod donation;
 mod error;
 mod funds;
 mod home_assistant;
+mod sound;
 
 use cashcode::{BillEvent, CashCode};
 use config::Config;
@@ -25,6 +26,13 @@ pub fn main() {
         .init();
 
     info!("Starting :3");
+
+    sound::init();
+
+    // Test
+    for _ in 0..5 {
+        sound::play_yippee();
+    }
 
     // Load config
     let config = match Config::load() {
@@ -434,7 +442,10 @@ mod donation_handler {
                     slint::spawn_local(async move {
                         match donation::send_donation(&token, fund_id, &username_str, amount).await
                         {
-                            Ok(_) => info!("✅ Donation sent successfully!"),
+                            Ok(_) => {
+                                sound::play_yippee();
+                                info!("✅ Donation sent successfully!");
+                            }
                             Err(e) => error!("❌ Failed to send donation: {}", e),
                         }
                     })
@@ -442,6 +453,50 @@ mod donation_handler {
                 } else {
                     warn!("⚠️  No token loaded, donation not sent to server");
                 }
+            }
+        });
+
+        // Drive confetti animation from Rust with a two-step approach:
+        // 1. show-confetti is already set to true by the Slint side (overlay is created)
+        // 2. After a brief delay, set confetti-falling = true (triggers the animations)
+        // 3. After animation completes, reset both properties
+        let weak = app.as_weak();
+        app.on_confetti_started(move || {
+            crate::sound::play_yippee();
+            // Step 1: trigger falling after a short delay so the component is fully rendered
+            let weak_fall = weak.clone();
+            slint::Timer::single_shot(std::time::Duration::from_millis(50), move || {
+                if let Some(window) = weak_fall.upgrade() {
+                    window.set_confetti_falling(true);
+                }
+            });
+
+            // Step 2: dismiss everything after animations complete
+            let weak_dismiss = weak.clone();
+            slint::Timer::single_shot(std::time::Duration::from_millis(2500), move || {
+                if let Some(window) = weak_dismiss.upgrade() {
+                    window.set_confetti_falling(false);
+                    window.set_show_confetti(false);
+                }
+            });
+        });
+
+        // Warmup: run the animation once at startup (no sound) so all SVGs are
+        // rasterized and cached before the first real donation triggers it.
+        let weak_warmup = app.as_weak();
+        slint::Timer::single_shot(std::time::Duration::from_millis(500), move || {
+            if let Some(window) = weak_warmup.upgrade() {
+                info!("🎉 Warming up confetti cache...");
+                window.set_show_confetti(true);
+                window.set_confetti_falling(true);
+
+                let weak_done = weak_warmup.clone();
+                slint::Timer::single_shot(std::time::Duration::from_millis(1000), move || {
+                    if let Some(window) = weak_done.upgrade() {
+                        window.set_confetti_falling(false);
+                        window.set_show_confetti(false);
+                    }
+                });
             }
         });
     }

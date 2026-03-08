@@ -13,6 +13,9 @@ export global AutocompleteHandler {
 
     // Toggle this property to trigger autocomplete on the active input
     in-out property <bool> trigger-autocomplete-toggle: false;
+
+    // True when the focused input has an active autocomplete suggestion
+    in-out property <bool> return-key-active: false;
 }
 
 export component AutocompleteLineEdit inherits Rectangle {
@@ -66,13 +69,17 @@ export component AutocompleteLineEdit inherits Rectangle {
     // Reset cursor visibility when focus changes
     changed has-focus => {
         root.cursor-visible = true;
+        AutocompleteHandler.return-key-active = root.has-focus && root.current-suggestion != "";
     }
-
     // React to autocomplete trigger from virtual keyboard
     changed autocomplete-trigger => {
         if (root.has-focus) {
             root.apply-autocomplete();
         }
+    }
+
+    changed current-suggestion => {
+        AutocompleteHandler.return-key-active = root.has-focus && root.current-suggestion != "";
     }
 
     forward-focus: inner-input;

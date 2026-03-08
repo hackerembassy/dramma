@@ -38,7 +38,8 @@ jobs:
             libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
             libxkbcommon-dev \
             libudev-dev \
-            libcurl4-openssl-dev
+            libcurl4-openssl-dev \
+            libasound2-dev
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --all-features
@@ -46,9 +47,6 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [test]
-    # Run even if test job was skipped
-    if: always() && (needs.test.result == 'success' || needs.test.result == 'skipped')
     steps:
       - uses: actions/checkout@v4
 
@@ -60,7 +58,8 @@ jobs:
             libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
             libxkbcommon-dev \
             libudev-dev \
-            libcurl4-openssl-dev
+            libcurl4-openssl-dev \
+            libasound2-dev
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -78,7 +77,8 @@ jobs:
   deploy:
     name: Deploy to dramma.lan
     runs-on: ubuntu-latest
-    needs: [build]
+    needs: [test, build]
+    if: always() && needs.build.result == 'success' && (needs.test.result == 'success' || needs.test.result == 'skipped')
     environment: production
     steps:
       - uses: actions/checkout@v4
@@ -90,11 +90,20 @@ jobs:
           path: target/release/
 
       - name: Connect to Tailscale
-        uses: tailscale/github-action@v2
-        with:
-          args: --login-server=https://tail.hackem.cc
-          authkey: ${{ secrets.TS_AUTHKEY }}
-          tags: tag:ci
+        run: |
+          curl -fsSL https://tailscale.com/install.sh | sh
+          sudo tailscaled --state=/tmp/tailscaled.state &
+          sleep 3
+          sudo tailscale up \
+            --login-server=https://tail.hackem.cc \
+            --authkey=${{ secrets.TS_AUTHKEY }} \
+            --hostname=github-actions \
+            --timeout=30s \
+            --accept-routes
+          echo "Tailscale status:"
+          sudo tailscale status
+          echo "Ping dramma.lan:"
+          sudo tailscale ping dramma.lan || ping -c3 dramma.lan
 
       - name: Set up SSH
         run: |
@@ -124,7 +133,8 @@ jobs:
             libxkbcommon0 \
             libudev1 \
             libcurl4 \
-            libstdc++6"
+            libstdc++6 \
+            libasound2"
 
       - name: Deploy binary
         run: |
@@ -136,7 +146,9 @@ jobs:
 
       - name: Deploy configuration
         run: |
-          scp .config/dramma.toml root@${{ env.DRAMMA_HOST }}:${{ env.REMOTE_DIR }}/.config/
+          ssh root@${{ env.DRAMMA_HOST }} "cat > ${{ env.REMOTE_DIR }}/.config/dramma.toml" << 'EOF'
+          token = "${{ secrets.DRAMMA_TOKEN }}"
+          EOF
           ssh root@${{ env.DRAMMA_HOST }} \
             "chown ${{ env.DRAMMA_USER }}:${{ env.DRAMMA_USER }} ${{ env.REMOTE_DIR }}/.config/dramma.toml"
 
@@ -178,6 +190,7 @@ jobs:
 
       - name: Enable and start service
         run: |
+          ssh root@${{ env.DRAMMA_HOST }} "usermod -a -G dialout ${{ env.DRAMMA_USER }}"
           ssh root@${{ env.DRAMMA_HOST }} "loginctl enable-linger ${{ env.DRAMMA_USER }}"
           ssh root@${{ env.DRAMMA_HOST }} \
             "su - ${{ env.DRAMMA_USER }} -c \
