@@ -190,6 +190,7 @@ jobs:
 
       - name: Enable and start service
         run: |
+          ssh root@${{ env.DRAMMA_HOST }} "usermod -a -G dialout ${{ env.DRAMMA_USER }}"
           ssh root@${{ env.DRAMMA_HOST }} "loginctl enable-linger ${{ env.DRAMMA_USER }}"
           ssh root@${{ env.DRAMMA_HOST }} \
             "su - ${{ env.DRAMMA_USER }} -c \
