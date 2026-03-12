@@ -3,20 +3,21 @@ import { Button, Palette } from "std-widgets.slint";
 export component InsertMoney inherits Rectangle {
     in-out property <int> current-amount: 0;
     in property <string> username: "";
-    
+    in property <string> fundname: "";
+
     callback cancel-clicked();
     callback done-clicked(string, int);  // username, amount
-    
+
     background: Palette.background;
-    
+
     VerticalLayout {
         alignment: start;
         padding: 32px;
         spacing: 32px;
-        
+
         HorizontalLayout {
             alignment: start;
-            
+
             if root.current-amount == 0: Button {
                 text: "← Cancel";
                 width: 150px;
@@ -36,7 +37,7 @@ export component InsertMoney inherits Rectangle {
                 height: 60px;
             }
         }
-        
+
         // header
         Text {
             text: "Please Insert Money";
@@ -53,17 +54,25 @@ export component InsertMoney inherits Rectangle {
             opacity: 0.7;
             horizontal-alignment: center;
         }
-        
+
+        Text {
+            text: "Donating to " + root.fundname;
+            font-size: 20px;
+            color: Palette.foreground;
+            opacity: 0.7;
+            horizontal-alignment: center;
+        }
+
         // spacer
         Rectangle {
-            height: 60px;
+            height: 48px;
         }
-        
+
         // amount display
         VerticalLayout {
             spacing: 16px;
             alignment: center;
-            
+
             Text {
                 text: "Inserted Amount:";
                 font-size: 24px;
@@ -71,17 +80,17 @@ export component InsertMoney inherits Rectangle {
                 horizontal-alignment: center;
                 opacity: 0.8;
             }
-            
+
             Rectangle {
                 height: 120px;
                 border-radius: 16px;
                 background: Palette.color-scheme == ColorScheme.dark ? #2a2a2a : #f5f5f5;
                 border-width: 3px;
                 border-color: root.current-amount > 0 ? #4CAF50 : #cccccc;
-                
+
                 HorizontalLayout {
                     alignment: center;
-                    
+
                     Text {
                         text: root.current-amount + " ֏";
                         font-size: 64px;
@@ -92,7 +101,7 @@ export component InsertMoney inherits Rectangle {
                 }
             }
         }
-        
+
         // instructions
         Text {
             text: "Insert bills into me";
@@ -101,29 +110,29 @@ export component InsertMoney inherits Rectangle {
             horizontal-alignment: center;
             opacity: 0.7;
         }
-        
+
         // spacer to push button to bottom
         Rectangle {
             vertical-stretch: 1;
         }
-        
+
         // done button
         HorizontalLayout {
             alignment: center;
-            
+
             done-button := Button {
                 text: "Done ✓";
                 primary: true;
                 enabled: root.current-amount > 0;
                 width: 350px;
                 height: 120px;
-                
+
                 clicked => {
                     root.done-clicked(root.username, root.current-amount);
                 }
             }
         }
-        
+
         // status text
         if root.current-amount == 0 : Text {
             text: "Done button will be enabled after inserting money";

@@ -23,6 +23,7 @@ export component MainWindow inherits Window {
     in-out property <int> session-amount: 0;
     in-out property <string> session-username: "";
     in-out property <int> session-fund-id: 0;
+    in-out property <string> session-fund-name: "";
 
     // data storage
     in-out property <[string]> available-funds: [];
@@ -81,6 +82,7 @@ export component MainWindow inherits Window {
                 VirtualKeyboardHandler.open = false;
                 root.session-username = username;
                 root.session-fund-id = fund-id;
+                root.session-fund-name = self.selected-fund-index >= 0 ? self.fund-items[self.selected-fund-index] : "";
                 root.session-amount = 0;  // reset session amount
                 root.start-accepting-money();  // enable bill acceptor
                 root.current-page = Page.InsertMoney;
@@ -89,6 +91,7 @@ export component MainWindow inherits Window {
         if current-page == Page.InsertMoney: InsertMoney {
             current-amount: root.session-amount;
             username: root.session-username;
+            fundname: root.session-fund-name;
 
             cancel-clicked => {
                 root.stop-accepting-money();  // disable bill acceptor
