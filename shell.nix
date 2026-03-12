@@ -18,6 +18,7 @@ pkgs.mkShell {
     libXrandr
     libXi
     openssl
+    alsa-lib
   ];
 
   shellHook = ''
@@ -29,6 +30,7 @@ pkgs.mkShell {
       pkgs.libXcursor
       pkgs.libXrandr
       pkgs.libXi
+      pkgs.alsa-lib
     ]}
     echo "Rust development environment"
     echo "Rust version: $(rustc --version)"
