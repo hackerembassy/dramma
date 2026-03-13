@@ -21,6 +21,8 @@ pub struct Config {
     pub token: Option<String>,
     pub home_assistant_url: String,
     pub cashcode_serial_port: String,
+    pub cctalk_serial_port: Option<String>,
+    pub cctalk_address: u8,
     pub stats_db_path: String,
 }
 
@@ -32,6 +34,8 @@ impl Default for Config {
             cashcode_serial_port:
                 "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0"
                     .to_string(),
+            cctalk_serial_port: None,
+            cctalk_address: 2,
             stats_db_path: "data/Stats.db".to_string(),
         }
     }

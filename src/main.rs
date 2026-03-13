@@ -4,6 +4,7 @@
 slint::include_modules!();
 
 mod cashcode;
+mod cctalk;
 mod config;
 mod donation;
 mod error;
@@ -12,6 +13,7 @@ mod home_assistant;
 mod sound;
 
 use cashcode::{BillEvent, CashCode};
+use cctalk::Coin;
 use config::Config;
 use log::{error, info, warn};
 use slint::Model;
@@ -53,9 +55,9 @@ pub fn main() {
 
     virtual_keyboard::init(&main_window);
     autocomplete_handler::init(&main_window);
-    let cashcode_tx = bill_acceptor::init(&main_window, &config);
+    let money_tx = bill_acceptor::init(&main_window, &config);
     fund_fetcher::init(&main_window, &config);
-    donation_handler::init(&main_window, &config, cashcode_tx);
+    donation_handler::init(&main_window, &config, money_tx);
     home_assistant_handler::init(&main_window, &config);
 
     main_window.run().unwrap();
@@ -66,36 +68,55 @@ mod bill_acceptor {
     use slint::*;
     use std::sync::mpsc::channel;
 
-    /// Commands to control the CashCode bill acceptor
+    /// Commands to control money acceptors
     #[derive(Debug, Clone)]
-    pub enum CashCodeCommand {
+    pub enum MoneyCommand {
         Enable,
         Disable,
     }
 
-    pub fn init(app: &MainWindow, config: &Config) -> Sender<CashCodeCommand> {
+    pub enum MoneyEvent {
+        Bill(BillEvent),
+        Coin(Coin),
+    }
+
+    pub fn init(app: &MainWindow, config: &Config) -> Sender<MoneyCommand> {
         let weak = app.as_weak();
 
-        // Create a channel for bill events (from CashCode to UI)
-        let (event_tx, event_rx) = channel::<BillEvent>();
+        // Create a channel for money events (from acceptors to UI)
+        let (event_tx, event_rx) = channel::<MoneyEvent>();
 
-        // Create a channel for control commands (from UI to CashCode)
-        let (cmd_tx, cmd_rx) = channel::<CashCodeCommand>();
+        // Create a channel for control commands (from UI to acceptors)
+        let (cmd_tx, cmd_rx) = channel::<MoneyCommand>();
 
         // Start CashCode driver in a separate thread
         thread::spawn({
             let config = config.clone();
+            let event_tx = event_tx.clone();
             move || match init_cashcode(&config, event_tx, cmd_rx) {
                 Ok(_) => info!("CashCode driver stopped"),
                 Err(e) => error!("CashCode driver error: {}", e),
             }
         });
 
+        // Start CcTalk driver if configured
+        if let Some(ref port_path) = config.cctalk_serial_port {
+            thread::spawn({
+                let config = config.clone();
+                let port_path = port_path.clone();
+                let event_tx = event_tx.clone();
+                move || match init_cctalk(&port_path, config.cctalk_address, event_tx) {
+                    Ok(_) => info!("CcTalk driver stopped"),
+                    Err(e) => error!("CcTalk driver error: {}", e),
+                }
+            });
+        }
+
         // Set up callbacks for page transitions
         let cmd_tx_start = cmd_tx.clone();
         app.on_start_accepting_money(move || {
             info!("📥 UI: Start accepting money");
-            if cmd_tx_start.send(CashCodeCommand::Enable).is_err() {
+            if cmd_tx_start.send(MoneyCommand::Enable).is_err() {
                 error!("Failed to send enable command to CashCode");
             }
         });
@@ -103,12 +124,12 @@ mod bill_acceptor {
         let cmd_tx_stop = cmd_tx.clone();
         app.on_stop_accepting_money(move || {
             info!("📤 UI: Stop accepting money");
-            if cmd_tx_stop.send(CashCodeCommand::Disable).is_err() {
+            if cmd_tx_stop.send(MoneyCommand::Disable).is_err() {
                 error!("Failed to send disable command to CashCode");
             }
         });
 
-        // Poll for bill events and update UI
+        // Poll for money events and update UI
         let timer = Timer::default();
         timer.start(
             TimerMode::Repeated,
@@ -118,24 +139,29 @@ mod bill_acceptor {
                     // Process all pending events
                     while let Ok(event) = event_rx.try_recv() {
                         match event {
-                            BillEvent::Accepted(nominal) => {
+                            MoneyEvent::Bill(BillEvent::Accepted(nominal)) => {
                                 info!("💵 Bill accepted in UI: {} dram", nominal as i32);
                                 let current = window.get_session_amount();
                                 window.set_session_amount(current + nominal as i32);
                             }
-                            BillEvent::Rejected(reason) => {
+                            MoneyEvent::Coin(coin) => {
+                                info!("🪙 Coin accepted in UI: {}", coin);
+                                let current = window.get_session_amount();
+                                window.set_session_amount(current + coin.value as i32);
+                            }
+                            MoneyEvent::Bill(BillEvent::Rejected(reason)) => {
                                 info!("❌ Bill rejected: {}", reason);
                             }
-                            BillEvent::StackerRemoved => {
+                            MoneyEvent::Bill(BillEvent::StackerRemoved) => {
                                 error!("⚠️  Stacker removed!");
                             }
-                            BillEvent::StackerReplaced => {
+                            MoneyEvent::Bill(BillEvent::StackerReplaced) => {
                                 info!("✅ Stacker replaced");
                             }
-                            BillEvent::Jam(msg) => {
+                            MoneyEvent::Bill(BillEvent::Jam(msg)) => {
                                 error!("🚫 Jam: {}", msg);
                             }
-                            BillEvent::Error(msg) => {
+                            MoneyEvent::Bill(BillEvent::Error(msg)) => {
                                 error!("⚠️  Error: {}", msg);
                             }
                         }
@@ -153,25 +179,19 @@ mod bill_acceptor {
 
 fn init_cashcode(
     config: &Config,
-    tx: Sender<BillEvent>,
-    cmd_rx: std::sync::mpsc::Receiver<bill_acceptor::CashCodeCommand>,
+    tx: Sender<bill_acceptor::MoneyEvent>,
+    cmd_rx: std::sync::mpsc::Receiver<bill_acceptor::MoneyCommand>,
 ) -> Result<(), cashcode::CashCodeError> {
-    use bill_acceptor::CashCodeCommand;
+    use bill_acceptor::{MoneyCommand, MoneyEvent};
 
     info!("Initializing CashCode driver...");
     let mut cashcode = CashCode::new(&config.cashcode_serial_port, &config.stats_db_path)?;
 
     info!("Resetting bill acceptor...");
-    cashcode.reset()?;
+    if let Err(e) = cashcode.reset() {
+        error!("Failed to reset bill acceptor: {}", e);
+    }
     thread::sleep(Duration::from_secs(5));
-
-    info!("Polling for initializing status...");
-    cashcode.poll()?;
-    thread::sleep(Duration::from_millis(200));
-
-    info!("Polling for disabled status...");
-    cashcode.poll()?;
-    thread::sleep(Duration::from_millis(200));
 
     // Keep bill acceptor disabled until UI requests to enable it
     info!("Bill acceptor initialized, waiting for enable command...");
@@ -180,7 +200,7 @@ fn init_cashcode(
         // Check for enable/disable commands from UI
         while let Ok(cmd) = cmd_rx.try_recv() {
             match cmd {
-                CashCodeCommand::Enable => {
+                MoneyCommand::Enable => {
                     info!("📥 Enabling bill acceptor...");
                     if let Err(e) = cashcode.enable() {
                         error!("Failed to enable bill acceptor: {}", e);
@@ -188,7 +208,7 @@ fn init_cashcode(
                         info!("✅ Bill acceptor enabled");
                     }
                 }
-                CashCodeCommand::Disable => {
+                MoneyCommand::Disable => {
                     info!("📤 Disabling bill acceptor...");
                     if let Err(e) = cashcode.disable() {
                         error!("Failed to disable bill acceptor: {}", e);
@@ -202,7 +222,7 @@ fn init_cashcode(
         match cashcode.poll() {
             Ok(Some(event)) => {
                 // Send event to UI thread
-                if tx.send(event.clone()).is_err() {
+                if tx.send(MoneyEvent::Bill(event.clone())).is_err() {
                     error!("Failed to send event to UI thread");
                     break;
                 }
@@ -224,6 +244,38 @@ fn init_cashcode(
         }
 
         thread::sleep(Duration::from_millis(400));
+    }
+
+    Ok(())
+}
+
+fn init_cctalk(
+    port_path: &str,
+    address: u8,
+    tx: Sender<bill_acceptor::MoneyEvent>,
+) -> Result<(), cctalk::CcTalkError> {
+    use bill_acceptor::MoneyEvent;
+
+    info!("Initializing CcTalk driver on {}...", port_path);
+    let mut acceptor = cctalk::CoinAcceptor::new(port_path, address)?;
+
+    info!("CcTalk polling loop started...");
+    loop {
+        match acceptor.poll() {
+            Ok(Some(coin)) => {
+                info!("🪙 Coin detected: {}", coin);
+                if tx.send(MoneyEvent::Coin(coin)).is_err() {
+                    error!("Failed to send coin event to UI thread");
+                    break;
+                }
+            }
+            Ok(None) => {}
+            Err(e) => {
+                error!("CcTalk poll error: {}", e);
+                thread::sleep(Duration::from_secs(1));
+            }
+        }
+        thread::sleep(Duration::from_millis(200));
     }
 
     Ok(())
@@ -414,13 +466,9 @@ mod fund_fetcher {
 mod donation_handler {
     use super::*;
 
-    pub fn init(
-        app: &MainWindow,
-        config: &Config,
-        cashcode_tx: Sender<bill_acceptor::CashCodeCommand>,
-    ) {
+    pub fn init(app: &MainWindow, config: &Config, money_tx: Sender<bill_acceptor::MoneyCommand>) {
         app.on_done_clicked({
-            let cashcode_tx = cashcode_tx.clone();
+            let money_tx = money_tx.clone();
             let token = config.token.clone();
             move |username, fund_id, amount| {
                 info!(
@@ -429,10 +477,7 @@ mod donation_handler {
                 );
 
                 // Stop accepting money immediately
-                if cashcode_tx
-                    .send(bill_acceptor::CashCodeCommand::Disable)
-                    .is_err()
-                {
+                if money_tx.send(bill_acceptor::MoneyCommand::Disable).is_err() {
                     error!("Failed to send disable command to CashCode on done click");
                 }
                 if let Some(ref token) = token {
