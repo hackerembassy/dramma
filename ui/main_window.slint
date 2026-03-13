@@ -33,6 +33,8 @@ export component MainWindow inherits Window {
     // confetti state
     in-out property <bool> show-confetti: false;
     in-out property <bool> confetti-falling: false;
+    // inactivity countdown (seconds remaining, updated by Rust)
+    in-out property <int> inactivity-seconds-left: 180;
 
     // callbacks for rust to hook into
     callback done-clicked(string, int, int);  // username, fund_id, amount
@@ -43,6 +45,19 @@ export component MainWindow inherits Window {
     callback fetch-funds();  // fetches available-funds and available-fund-ids
     callback fetch-usernames();  // fetches available-usernames for autocomplete
     callback confetti-started();  // tells rust to start confetti dismiss timer
+    callback enter-insert-money();  // tells rust to start inactivity timer
+    callback activity-on-insert-money();  // tells rust to reset inactivity timer (bill inserted)
+    // invoked by rust on inactivity timeout:
+    callback cancel-insert-money();  // auto-cancel: go back to donate page
+    cancel-insert-money => {
+        root.current-page = Page.Donate;
+    }
+    callback show-confetti-after-auto-approve();  // auto-approve: go to main + show confetti
+    show-confetti-after-auto-approve => {
+        root.current-page = Page.Main;
+        root.show-confetti = true;
+        root.confetti-started();
+    }
 
     title: "Donation Machine";
     width: 1280px;
@@ -86,12 +101,21 @@ export component MainWindow inherits Window {
                 root.session-amount = 0;  // reset session amount
                 root.start-accepting-money();  // enable bill acceptor
                 root.current-page = Page.InsertMoney;
+                root.enter-insert-money();  // start inactivity timer
             }
         }
         if current-page == Page.InsertMoney: InsertMoney {
             current-amount: root.session-amount;
             username: root.session-username;
             fundname: root.session-fund-name;
+            seconds-left: root.inactivity-seconds-left;
+
+            // notify Rust whenever session-amount changes (bill inserted) to reset inactivity timer
+            changed current-amount => {
+                if self.current-amount > 0 {
+                    root.activity-on-insert-money();
+                }
+            }
 
             cancel-clicked => {
                 root.stop-accepting-money();  // disable bill acceptor

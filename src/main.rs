@@ -15,6 +15,8 @@ use cashcode::{BillEvent, CashCode};
 use config::Config;
 use log::{error, info, warn};
 use slint::Model;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::mpsc::Sender;
 use std::thread;
 use std::time::Duration;
@@ -414,11 +416,84 @@ mod fund_fetcher {
 mod donation_handler {
     use super::*;
 
+    const INACTIVITY_TIMEOUT_SECS: u64 = 180; // 3 minutes
+
+    /// Spawns a single-shot inactivity timer. Returns the Timer (must be kept alive).
+    fn spawn_inactivity_timer(
+        weak: slint::Weak<MainWindow>,
+        cashcode_tx: Sender<bill_acceptor::CashCodeCommand>,
+        token: Option<String>,
+    ) -> slint::Timer {
+        let timer = slint::Timer::default();
+        timer.start(
+            slint::TimerMode::SingleShot,
+            Duration::from_secs(INACTIVITY_TIMEOUT_SECS),
+            move || {
+                if let Some(window) = weak.upgrade() {
+                    let amount = window.get_session_amount();
+                    if amount == 0 {
+                        // No money inserted — auto-cancel
+                        info!("⏱️  Inactivity timeout: auto-cancelling (no money inserted)");
+                        if cashcode_tx
+                            .send(bill_acceptor::CashCodeCommand::Disable)
+                            .is_err()
+                        {
+                            error!("Failed to send disable command on inactivity cancel");
+                        }
+                        window.set_session_amount(0);
+                        window.set_session_username(slint::SharedString::default());
+                        window.invoke_cancel_insert_money();
+                    } else {
+                        // Money inserted — auto-approve
+                        info!("⏱️  Inactivity timeout: auto-approving {} AMD", amount);
+                        if cashcode_tx
+                            .send(bill_acceptor::CashCodeCommand::Disable)
+                            .is_err()
+                        {
+                            error!("Failed to send disable command on inactivity approve");
+                        }
+                        if let Some(ref tok) = token {
+                            let username = window.get_session_username().to_string();
+                            let fund_id = window.get_session_fund_id();
+                            let tok = tok.clone();
+                            slint::spawn_local(async move {
+                                match donation::send_donation(&tok, fund_id, &username, amount)
+                                    .await
+                                {
+                                    Ok(_) => {
+                                        sound::play_yippee();
+                                        info!("✅ Auto-approved donation sent successfully!");
+                                    }
+                                    Err(e) => {
+                                        error!("❌ Auto-approve: failed to send donation: {}", e)
+                                    }
+                                }
+                            })
+                            .unwrap();
+                        } else {
+                            warn!("⚠️  No token — auto-approved donation not sent to server");
+                        }
+                        window.set_session_amount(0);
+                        window.set_session_username(slint::SharedString::default());
+                        window.set_session_fund_id(0);
+                        window.invoke_show_confetti_after_auto_approve();
+                    }
+                }
+            },
+        );
+        timer
+    }
+
     pub fn init(
         app: &MainWindow,
         config: &Config,
         cashcode_tx: Sender<bill_acceptor::CashCodeCommand>,
     ) {
+        // Shared timer slots — replaced on each entry to InsertMoney page or bill insertion
+        // Using Rc<RefCell<>> because all callbacks run on the single Slint event-loop thread.
+        let inactivity_timer: Rc<RefCell<Option<slint::Timer>>> = Rc::new(RefCell::new(None));
+        let countdown_ticker: Rc<RefCell<Option<slint::Timer>>> = Rc::new(RefCell::new(None));
+
         app.on_done_clicked({
             let cashcode_tx = cashcode_tx.clone();
             let token = config.token.clone();
@@ -454,6 +529,80 @@ mod donation_handler {
                     warn!("⚠️  No token loaded, donation not sent to server");
                 }
             }
+        });
+
+        // enter-insert-money: start 3-minute inactivity timer + countdown ticker
+        let weak_enter = app.as_weak();
+        let cashcode_tx_enter = cashcode_tx.clone();
+        let token_enter = config.token.clone();
+        let timer_enter = inactivity_timer.clone();
+        let ticker_enter = countdown_ticker.clone();
+        app.on_enter_insert_money(move || {
+            info!("⏱️  InsertMoney entered — starting {INACTIVITY_TIMEOUT_SECS}s inactivity timer");
+            // Reset the countdown display
+            if let Some(w) = weak_enter.upgrade() {
+                w.set_inactivity_seconds_left(INACTIVITY_TIMEOUT_SECS as i32);
+            }
+            // Main timeout timer
+            let timer = spawn_inactivity_timer(
+                weak_enter.clone(),
+                cashcode_tx_enter.clone(),
+                token_enter.clone(),
+            );
+            *timer_enter.borrow_mut() = Some(timer);
+            // Countdown ticker (1-second decrement)
+            let weak_tick = weak_enter.clone();
+            let ticker = slint::Timer::default();
+            ticker.start(
+                slint::TimerMode::Repeated,
+                Duration::from_secs(1),
+                move || {
+                    if let Some(w) = weak_tick.upgrade() {
+                        let current = w.get_inactivity_seconds_left();
+                        if current > 0 {
+                            w.set_inactivity_seconds_left(current - 1);
+                        }
+                    }
+                },
+            );
+            *ticker_enter.borrow_mut() = Some(ticker);
+        });
+
+        // activity-on-insert-money: reset both timers when a bill is inserted
+        let weak_activity = app.as_weak();
+        let cashcode_tx_activity = cashcode_tx.clone();
+        let token_activity = config.token.clone();
+        let timer_activity = inactivity_timer.clone();
+        let ticker_activity = countdown_ticker.clone();
+        app.on_activity_on_insert_money(move || {
+            info!("⏱️  Bill inserted — resetting inactivity timer");
+            // Reset countdown display
+            if let Some(w) = weak_activity.upgrade() {
+                w.set_inactivity_seconds_left(INACTIVITY_TIMEOUT_SECS as i32);
+            }
+            // Replace main timeout timer
+            let timer = spawn_inactivity_timer(
+                weak_activity.clone(),
+                cashcode_tx_activity.clone(),
+                token_activity.clone(),
+            );
+            *timer_activity.borrow_mut() = Some(timer);
+            // Replace countdown ticker
+            let weak_tick = weak_activity.clone();
+            let ticker = slint::Timer::default();
+            ticker.start(
+                slint::TimerMode::Repeated,
+                Duration::from_secs(1),
+                move || {
+                    if let Some(w) = weak_tick.upgrade() {
+                        let current = w.get_inactivity_seconds_left();
+                        if current > 0 {
+                            w.set_inactivity_seconds_left(current - 1);
+                        }
+                    }
+                },
+            );
+            *ticker_activity.borrow_mut() = Some(ticker);
         });
 
         // Drive confetti animation from Rust with a two-step approach:
