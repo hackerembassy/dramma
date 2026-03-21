@@ -34,6 +34,9 @@ export component MainWindow inherits Window {
     in-out property <bool> show-confetti: false;
     in-out property <bool> confetti-falling: false;
 
+    // toast state — set by Rust when a bill or coin is accepted
+    in-out property <int> last-added-amount: 0;
+
     // callbacks for rust to hook into
     callback done-clicked(string, int, int);  // username, fund_id, amount
     callback start-accepting-money();
@@ -92,6 +95,7 @@ export component MainWindow inherits Window {
             current-amount: root.session-amount;
             username: root.session-username;
             fundname: root.session-fund-name;
+            last-added-amount <=> root.last-added-amount;
 
             cancel-clicked => {
                 root.stop-accepting-money();  // disable bill acceptor
