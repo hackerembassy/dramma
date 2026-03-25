@@ -127,6 +127,8 @@ mod bill_acceptor {
                             }
                             BillEvent::Rejected(reason) => {
                                 info!("❌ Bill rejected: {}", reason);
+                                // Rejected bill still counts as insert-page activity
+                                window.invoke_activity_on_insert_money();
                             }
                             BillEvent::StackerRemoved => {
                                 error!("⚠️  Stacker removed!");
@@ -430,6 +432,13 @@ mod donation_handler {
             Duration::from_secs(INACTIVITY_TIMEOUT_SECS),
             move || {
                 if let Some(window) = weak.upgrade() {
+                    // Guard: only act if we're still on the InsertMoney page
+                    if !window.get_on_insert_money_page() {
+                        info!(
+                            "⏱️  Inactivity timeout fired but not on InsertMoney page — ignoring"
+                        );
+                        return;
+                    }
                     let amount = window.get_session_amount();
                     if amount == 0 {
                         // No money inserted — auto-cancel
@@ -603,6 +612,15 @@ mod donation_handler {
                 },
             );
             *ticker_activity.borrow_mut() = Some(ticker);
+        });
+
+        // leave-insert-money: stop both timers when user exits normally (cancel or done)
+        let timer_leave = inactivity_timer.clone();
+        let ticker_leave = countdown_ticker.clone();
+        app.on_leave_insert_money(move || {
+            info!("⏱️  InsertMoney left — stopping inactivity timers");
+            *timer_leave.borrow_mut() = None; // drops Timer → cancels it
+            *ticker_leave.borrow_mut() = None; // drops Timer → cancels it
         });
 
         // Drive confetti animation from Rust with a two-step approach:
