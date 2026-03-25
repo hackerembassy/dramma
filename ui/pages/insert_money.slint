@@ -2,6 +2,7 @@ import { Button, Palette } from "std-widgets.slint";
 
 export component InsertMoney inherits Rectangle {
     in-out property <int> current-amount: 0;
+    in-out property <int> last-added-amount: 0;
     in property <string> username: "";
     in property <string> fundname: "";
     in property <int> seconds-left: 180;  // countdown updated by Rust
@@ -20,6 +21,38 @@ export component InsertMoney inherits Rectangle {
         clicked => { root.screen-tapped(); }
     }
 
+    // Internal toast state.
+    // display-amount holds the last non-zero amount so the text stays correct
+    // while the toast is fading out (avoids a "+0 ֏" flash).
+    // toast-active drives y independently of last-added-amount so the rise
+    // and fade-out can be decoupled.
+    property <int> display-amount: 0;
+    property <bool> toast-active: false;
+
+    // Phase 1 — capture amount and start rise (~1 frame after trigger)
+    Timer {
+        interval: 16ms;
+        running: root.last-added-amount != 0 && !root.toast-active;
+        triggered => {
+            root.display-amount = root.last-added-amount;
+            root.toast-active = true;
+        }
+    }
+
+    // Phase 2 — fade out after showing for ~1100ms
+    Timer {
+        interval: 1100ms;
+        running: root.last-added-amount != 0;
+        triggered => { root.last-added-amount = 0; }
+    }
+
+    // Phase 3 — snap y back to start while invisible (600ms > opacity fade of 500ms)
+    Timer {
+        interval: 600ms;
+        running: root.last-added-amount == 0 && root.toast-active;
+        triggered => { root.toast-active = false; }
+    }
+    
     VerticalLayout {
         alignment: start;
         padding: 32px;
@@ -90,31 +123,56 @@ export component InsertMoney inherits Rectangle {
                 horizontal-alignment: center;
                 opacity: 0.8;
             }
-
+            
+            // Wrapper for the amount box and the toast overlay.
+            // clip: false so the toast can float above the box.
             Rectangle {
                 height: 120px;
-                border-radius: 16px;
-                background: Palette.color-scheme == ColorScheme.dark ? #2a2a2a : #f5f5f5;
-                border-width: 3px;
-                border-color: root.current-amount > 0 ? #4CAF50 : #cccccc;
+                clip: false;
 
-                HorizontalLayout {
-                    alignment: center;
+                amount-box := Rectangle {
+                    width: 100%;
+                    height: 100%;
+                    border-radius: 16px;
+                    background: Palette.color-scheme == ColorScheme.dark ? #2a2a2a : #f5f5f5;
+                    border-width: 3px;
+                    border-color: root.current-amount > 0 ? #4CAF50 : #cccccc;
 
-                    Text {
-                        text: root.current-amount + " ֏";
-                        font-size: 64px;
-                        font-weight: 700;
-                        color: root.current-amount > 0 ? #4CAF50 : Palette.foreground;
-                        horizontal-alignment: center;
+                    HorizontalLayout {
+                        alignment: center;
+
+                        Text {
+                            text: root.current-amount + " ֏";
+                            font-size: 64px;
+                            font-weight: 700;
+                            color: root.current-amount > 0 ? #4CAF50 : Palette.foreground;
+                            horizontal-alignment: center;
+                        }
                     }
+                }
+
+                // Toast: rises upward above the amount box then fades out.
+                toast-text := Text {
+                    text: "+" + root.display-amount + " ֏";
+                    color: #4CAF50;
+                    font-size: 38px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                    width: parent.width;
+                    // Rise from just above the box edge to well above it.
+                    y: root.toast-active ? -90px : -20px;
+                    // Fade in when amount is set; fade out when timer clears it.
+                    opacity: root.last-added-amount != 0 ? 1.0 : 0.0;
+
+                    animate opacity { duration: 500ms; }
+                    animate y { duration: 1000ms; easing: ease-in-out; }
                 }
             }
         }
 
         // instructions
         Text {
-            text: "Insert bills into me";
+            text: "Insert bills or coins into me";
             font-size: 18px;
             color: Palette.foreground;
             horizontal-alignment: center;

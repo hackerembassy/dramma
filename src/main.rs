@@ -4,6 +4,7 @@
 slint::include_modules!();
 
 mod cashcode;
+mod cctalk;
 mod config;
 mod donation;
 mod error;
@@ -56,8 +57,9 @@ pub fn main() {
     virtual_keyboard::init(&main_window);
     autocomplete_handler::init(&main_window);
     let cashcode_tx = bill_acceptor::init(&main_window, &config);
+    let cctalk_tx = coin_acceptor::init(&main_window, &config, cashcode_tx.clone());
     fund_fetcher::init(&main_window, &config);
-    donation_handler::init(&main_window, &config, cashcode_tx);
+    donation_handler::init(&main_window, &config, cashcode_tx, cctalk_tx);
     home_assistant_handler::init(&main_window, &config);
 
     main_window.run().unwrap();
@@ -124,6 +126,7 @@ mod bill_acceptor {
                                 info!("💵 Bill accepted in UI: {} dram", nominal as i32);
                                 let current = window.get_session_amount();
                                 window.set_session_amount(current + nominal as i32);
+                                window.set_last_added_amount(nominal as i32);
                             }
                             BillEvent::Rejected(reason) => {
                                 info!("❌ Bill rejected: {}", reason);
@@ -231,6 +234,88 @@ fn init_cashcode(
     }
 
     Ok(())
+}
+
+mod coin_acceptor {
+    use super::*;
+    use crate::cctalk::{CoinAcceptorCommand, CoinAcceptorEvent};
+    use slint::*;
+    use std::sync::mpsc::channel;
+
+    pub fn init(
+        app: &MainWindow,
+        config: &Config,
+        cashcode_tx: Sender<bill_acceptor::CashCodeCommand>,
+    ) -> Sender<CoinAcceptorCommand> {
+        let weak = app.as_weak();
+
+        let (event_tx, event_rx) = channel::<CoinAcceptorEvent>();
+        let (cmd_tx, cmd_rx) = channel::<CoinAcceptorCommand>();
+
+        thread::spawn({
+            let serial_port = config.cctalk_serial_port.clone();
+            let coin_overrides = config.cctalk_coin_overrides.clone();
+            move || cctalk::run(serial_port, event_tx, cmd_rx, coin_overrides)
+        });
+
+        // Override start/stop callbacks to drive both bill and coin acceptors.
+        let cmd_tx_start = cmd_tx.clone();
+        let cashcode_tx_start = cashcode_tx.clone();
+        app.on_start_accepting_money(move || {
+            info!("📥 UI: Start accepting money (bills + coins)");
+            if cashcode_tx_start
+                .send(bill_acceptor::CashCodeCommand::Enable)
+                .is_err()
+            {
+                error!("Failed to send enable command to CashCode");
+            }
+            if cmd_tx_start.send(CoinAcceptorCommand::Enable).is_err() {
+                error!("Failed to send enable command to ccTalk coin acceptor");
+            }
+        });
+
+        let cmd_tx_stop = cmd_tx.clone();
+        let cashcode_tx_stop = cashcode_tx;
+        app.on_stop_accepting_money(move || {
+            info!("📤 UI: Stop accepting money (bills + coins)");
+            if cashcode_tx_stop
+                .send(bill_acceptor::CashCodeCommand::Disable)
+                .is_err()
+            {
+                error!("Failed to send disable command to CashCode");
+            }
+            if cmd_tx_stop.send(CoinAcceptorCommand::Disable).is_err() {
+                error!("Failed to send disable command to ccTalk coin acceptor");
+            }
+        });
+
+        // Poll for coin events on the slint timer and add to session amount.
+        let timer = Timer::default();
+        timer.start(
+            TimerMode::Repeated,
+            std::time::Duration::from_millis(100),
+            move || {
+                if let Some(window) = weak.upgrade() {
+                    while let Ok(event) = event_rx.try_recv() {
+                        match event {
+                            CoinAcceptorEvent::Accepted(value) => {
+                                info!("🪙 Coin accepted in UI: {} AMD", value);
+                                let current = window.get_session_amount();
+                                window.set_session_amount(current + value);
+                                window.set_last_added_amount(value);
+                            }
+                            CoinAcceptorEvent::Error(msg) => {
+                                error!("⚠️ {}", msg);
+                            }
+                        }
+                    }
+                }
+            },
+        );
+        std::mem::forget(timer);
+
+        cmd_tx
+    }
 }
 
 mod virtual_keyboard {
@@ -497,6 +582,7 @@ mod donation_handler {
         app: &MainWindow,
         config: &Config,
         cashcode_tx: Sender<bill_acceptor::CashCodeCommand>,
+        cctalk_tx: Sender<cctalk::CoinAcceptorCommand>,
     ) {
         // Shared timer slots — replaced on each entry to InsertMoney page or bill insertion
         // Using Rc<RefCell<>> because all callbacks run on the single Slint event-loop thread.
@@ -505,6 +591,7 @@ mod donation_handler {
 
         app.on_done_clicked({
             let cashcode_tx = cashcode_tx.clone();
+            let cctalk_tx = cctalk_tx.clone();
             let token = config.token.clone();
             move |username, fund_id, amount| {
                 info!(
@@ -518,6 +605,12 @@ mod donation_handler {
                     .is_err()
                 {
                     error!("Failed to send disable command to CashCode on done click");
+                }
+                if cctalk_tx
+                    .send(cctalk::CoinAcceptorCommand::Disable)
+                    .is_err()
+                {
+                    error!("Failed to send disable command to ccTalk coin acceptor on done click");
                 }
                 if let Some(ref token) = token {
                     // Send donation asynchronously using slint::spawn_local

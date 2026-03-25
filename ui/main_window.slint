@@ -38,6 +38,9 @@ export component MainWindow inherits Window {
     // read by Rust to guard inactivity timeout from firing on wrong page
     out property <bool> on-insert-money-page: current-page == Page.InsertMoney;
 
+    // toast state — set by Rust when a bill or coin is accepted
+    in-out property <int> last-added-amount: 0;
+
     // callbacks for rust to hook into
     callback done-clicked(string, int, int);  // username, fund_id, amount
     callback start-accepting-money();
@@ -124,6 +127,7 @@ export component MainWindow inherits Window {
             screen-tapped => {
                 root.activity-on-insert-money();
             }
+            last-added-amount <=> root.last-added-amount;
 
             cancel-clicked => {
                 root.leave-insert-money();  // stop inactivity timers
