@@ -6,6 +6,7 @@ import { Main } from "pages/main.slint";
 import { Donate } from "pages/donate.slint";
 import { InsertMoney } from "pages/insert_money.slint";
 import { HomeAssistant } from "pages/home_assistant.slint";
+import { Diagnostics } from "pages/diagnostics.slint";
 
 export { VirtualKeyboardHandler, KeyModel, AutocompleteHandler }
 
@@ -14,6 +15,7 @@ enum Page {
     Donate,
     InsertMoney,
     HomeAssistant,
+    Diagnostics,
     Top,
     Games
 }
@@ -40,6 +42,16 @@ export component MainWindow inherits Window {
 
     // toast state — set by Rust when a bill or coin is accepted
     in-out property <int> last-added-amount: 0;
+
+    // diagnostics
+    in-out property <[string]> diag-logs: [];
+    in-out property <string> diag-bill-status: "⏳ Initializing...";
+    in-out property <string> diag-coin-status: "⏳ Initializing...";
+    in-out property <string> diag-backend-status: "Not checked";
+    callback diag-reset-bills();
+    callback diag-reset-coins();
+    callback diag-play-sound();
+    callback diag-check-backend();
 
     // callbacks for rust to hook into
     callback done-clicked(string, int, int);  // username, fund_id, amount
@@ -78,6 +90,10 @@ export component MainWindow inherits Window {
             home-assistant-clicked => {
                 root.show-home-assistant();
                 root.current-page = Page.HomeAssistant;
+            }
+
+            secret-tapped => {
+                root.current-page = Page.Diagnostics;
             }
         }
         if current-page == Page.Donate: Donate {
@@ -156,6 +172,17 @@ export component MainWindow inherits Window {
                 root.hide-home-assistant();
                 root.current-page = Page.Main;
             }
+        }
+        if current-page == Page.Diagnostics: Diagnostics {
+            log-lines: root.diag-logs;
+            bill-status: root.diag-bill-status;
+            coin-status: root.diag-coin-status;
+            backend-status: root.diag-backend-status;
+            back-clicked => { root.current-page = Page.Main; }
+            reset-bills => { root.diag-reset-bills(); }
+            reset-coins => { root.diag-reset-coins(); }
+            play-sound => { root.diag-play-sound(); }
+            check-backend => { root.diag-check-backend(); }
         }
 
         // Confetti overlay — rendered on top of all pages

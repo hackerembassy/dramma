@@ -110,6 +110,8 @@ pub enum BillEvent {
     StackerReplaced,
     Jam(String),
     Error(String),
+    /// Lifecycle / device-state update for the diagnostics page.
+    Status(String),
 }
 
 pub struct CashCode {

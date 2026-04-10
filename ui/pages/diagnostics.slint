@@ -1,0 +1,192 @@
+import { Button, Palette, ListView } from "std-widgets.slint";
+
+export component Diagnostics inherits Rectangle {
+    callback back-clicked();
+    callback reset-bills();
+    callback reset-coins();
+    callback play-sound();
+    callback check-backend();
+
+    in-out property <[string]> log-lines: [];
+    in property <string> bill-status: "⏳ Initializing...";
+    in property <string> coin-status: "⏳ Initializing...";
+    in property <string> backend-status: "Not checked";
+
+    background: Palette.background;
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+
+        // ── Header ────────────────────────────────────────────────────────
+        HorizontalLayout {
+            alignment: space-between;
+            spacing: 16px;
+            height: 56px;
+
+            Button {
+                text: "← Back";
+                width: 130px;
+                clicked => { root.back-clicked(); }
+            }
+
+            Text {
+                text: "Diagnostics";
+                font-size: 28px;
+                font-weight: 700;
+                color: Palette.foreground;
+                vertical-alignment: center;
+                horizontal-alignment: center;
+                horizontal-stretch: 1;
+            }
+
+            // balance spacer so title stays centred
+            Rectangle { width: 130px; }
+        }
+
+        // ── Action buttons ────────────────────────────────────────────────
+        HorizontalLayout {
+            spacing: 16px;
+            alignment: center;
+            height: 64px;
+
+            Button {
+                text: "Reset Bill Acceptor";
+                width: 230px;
+                clicked => { root.reset-bills(); }
+            }
+
+            Button {
+                text: "Reset Coin Acceptor";
+                width: 230px;
+                clicked => { root.reset-coins(); }
+            }
+
+            Button {
+                text: "▶  Play Sound";
+                width: 180px;
+                clicked => { root.play-sound(); }
+            }
+        }
+
+        // ── Status panel ─────────────────────────────────────────────────────
+        Rectangle {
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Palette.color-scheme == ColorScheme.dark ? #444444 : #cccccc;
+            background: Palette.color-scheme == ColorScheme.dark ? #1c1c1c : #f6f6f6;
+            height: 118px;
+
+            VerticalLayout {
+                padding: 10px;
+                spacing: 6px;
+
+                // Bill acceptor row
+                HorizontalLayout {
+                    spacing: 8px;
+                    height: 26px;
+                    Text {
+                        text: "Bill acceptor";
+                        font-size: 13px;
+                        color: Palette.foreground;
+                        opacity: 0.55;
+                        width: 130px;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: root.bill-status;
+                        font-size: 13px;
+                        color: Palette.foreground;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                        overflow: elide;
+                    }
+                }
+
+                // Coin acceptor row
+                HorizontalLayout {
+                    spacing: 8px;
+                    height: 26px;
+                    Text {
+                        text: "Coin acceptor";
+                        font-size: 13px;
+                        color: Palette.foreground;
+                        opacity: 0.55;
+                        width: 130px;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: root.coin-status;
+                        font-size: 13px;
+                        color: Palette.foreground;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                        overflow: elide;
+                    }
+                }
+
+                // Backend API row
+                HorizontalLayout {
+                    spacing: 8px;
+                    height: 26px;
+                    Text {
+                        text: "Backend API";
+                        font-size: 13px;
+                        color: Palette.foreground;
+                        opacity: 0.55;
+                        width: 130px;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: root.backend-status;
+                        font-size: 13px;
+                        color: Palette.foreground;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                        overflow: elide;
+                    }
+                    Button {
+                        text: "Check";
+                        width: 80px;
+                        height: 26px;
+                        clicked => { root.check-backend(); }
+                    }
+                }
+            }
+        }
+
+        // ── Log header ────────────────────────────────────────────────────
+        Text {
+            text: "Log  (newest first — " + root.log-lines.length + " lines):";
+            font-size: 13px;
+            color: Palette.foreground;
+            opacity: 0.6;
+            height: 20px;
+        }
+
+        // ── Scrollable log ────────────────────────────────────────────────
+        log-view := ListView {
+            vertical-stretch: 1;
+
+            for line[i] in root.log-lines: Rectangle {
+                height: 22px;
+                background: mod(i, 2) == 0
+                    ? transparent
+                    : Palette.color-scheme == ColorScheme.dark
+                        ? #ffffff08
+                        : #00000008;
+
+                Text {
+                    x: 6px;
+                    width: parent.width - 12px;
+                    height: parent.height;
+                    text: line;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    color: Palette.foreground;
+                }
+            }
+        }
+    }
+}

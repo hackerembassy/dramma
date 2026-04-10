@@ -6,6 +6,7 @@ slint::include_modules!();
 mod cashcode;
 mod cctalk;
 mod config;
+mod diag_logger;
 mod donation;
 mod error;
 mod funds;
@@ -23,10 +24,7 @@ use std::thread;
 use std::time::Duration;
 
 pub fn main() {
-    // Initialize logger
-    env_logger::Builder::from_default_env()
-        .filter_level(log::LevelFilter::Info)
-        .init();
+    let log_rx = diag_logger::init();
 
     info!("Starting :3");
 
@@ -59,6 +57,7 @@ pub fn main() {
     let cashcode_tx = bill_acceptor::init(&main_window, &config);
     let cctalk_tx = coin_acceptor::init(&main_window, &config, cashcode_tx.clone());
     fund_fetcher::init(&main_window, &config);
+    diagnostics_handler::init(&main_window, log_rx, cashcode_tx.clone(), cctalk_tx.clone(), config.token.clone());
     donation_handler::init(&main_window, &config, cashcode_tx, cctalk_tx);
     home_assistant_handler::init(&main_window, &config);
 
@@ -67,7 +66,7 @@ pub fn main() {
 
 mod bill_acceptor {
     use super::*;
-    use slint::*;
+    use slint::{Timer, TimerMode};
     use std::sync::mpsc::channel;
 
     /// Commands to control the CashCode bill acceptor
@@ -75,6 +74,7 @@ mod bill_acceptor {
     pub enum CashCodeCommand {
         Enable,
         Disable,
+        Reset,
     }
 
     pub fn init(app: &MainWindow, config: &Config) -> Sender<CashCodeCommand> {
@@ -130,20 +130,38 @@ mod bill_acceptor {
                             }
                             BillEvent::Rejected(reason) => {
                                 info!("❌ Bill rejected: {}", reason);
+                                window.set_diag_bill_status(slint::SharedString::from(
+                                    format!("⚠️ Rejected: {}", reason),
+                                ));
                                 // Rejected bill still counts as insert-page activity
                                 window.invoke_activity_on_insert_money();
                             }
                             BillEvent::StackerRemoved => {
                                 error!("⚠️  Stacker removed!");
+                                window.set_diag_bill_status(slint::SharedString::from(
+                                    "⚠️ Stacker removed!",
+                                ));
                             }
                             BillEvent::StackerReplaced => {
                                 info!("✅ Stacker replaced");
+                                window.set_diag_bill_status(slint::SharedString::from(
+                                    "🟢 Stacker replaced",
+                                ));
                             }
                             BillEvent::Jam(msg) => {
                                 error!("🚫 Jam: {}", msg);
+                                window.set_diag_bill_status(slint::SharedString::from(
+                                    format!("🔴 Jam: {}", msg),
+                                ));
                             }
                             BillEvent::Error(msg) => {
                                 error!("⚠️  Error: {}", msg);
+                                window.set_diag_bill_status(slint::SharedString::from(
+                                    format!("🔴 Error: {}", msg),
+                                ));
+                            }
+                            BillEvent::Status(s) => {
+                                window.set_diag_bill_status(slint::SharedString::from(s));
                             }
                         }
                     }
@@ -166,8 +184,15 @@ fn init_cashcode(
     use bill_acceptor::CashCodeCommand;
 
     info!("Initializing CashCode driver...");
-    let mut cashcode = CashCode::new(&config.cashcode_serial_port, &config.stats_db_path)?;
+    let mut cashcode = match CashCode::new(&config.cashcode_serial_port, &config.stats_db_path) {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = tx.send(BillEvent::Status(format!("🔴 {}", e)));
+            return Err(e);
+        }
+    };
 
+    let _ = tx.send(BillEvent::Status("⏳ Resetting...".to_string()));
     info!("Resetting bill acceptor...");
     cashcode.reset()?;
     thread::sleep(Duration::from_secs(5));
@@ -180,6 +205,9 @@ fn init_cashcode(
     cashcode.poll()?;
     thread::sleep(Duration::from_millis(200));
 
+    let total = cashcode.get_total_amount().unwrap_or(0);
+    let _ = tx.send(BillEvent::Status(format!("🟢 Disabled · {} ֏ total", total)));
+
     // Keep bill acceptor disabled until UI requests to enable it
     info!("Bill acceptor initialized, waiting for enable command...");
     info!("Starting polling loop...");
@@ -191,8 +219,11 @@ fn init_cashcode(
                     info!("📥 Enabling bill acceptor...");
                     if let Err(e) = cashcode.enable() {
                         error!("Failed to enable bill acceptor: {}", e);
+                        let _ = tx.send(BillEvent::Status(format!("🔴 Enable failed: {}", e)));
                     } else {
                         info!("✅ Bill acceptor enabled");
+                        let total = cashcode.get_total_amount().unwrap_or(0);
+                        let _ = tx.send(BillEvent::Status(format!("🟢 Enabled · {} ֏ total", total)));
                     }
                 }
                 CashCodeCommand::Disable => {
@@ -201,6 +232,25 @@ fn init_cashcode(
                         error!("Failed to disable bill acceptor: {}", e);
                     } else {
                         info!("✅ Bill acceptor disabled");
+                        let total = cashcode.get_total_amount().unwrap_or(0);
+                        let _ = tx.send(BillEvent::Status(format!("🟢 Disabled · {} ֏ total", total)));
+                    }
+                }
+                CashCodeCommand::Reset => {
+                    info!("🔄 Resetting bill acceptor from diagnostics...");
+                    let _ = tx.send(BillEvent::Status("🔄 Resetting...".to_string()));
+                    if let Err(e) = cashcode.reset() {
+                        error!("Failed to reset bill acceptor: {}", e);
+                        let _ = tx.send(BillEvent::Status(format!("🔴 Reset failed: {}", e)));
+                    } else {
+                        info!("✅ Reset sent, waiting for device to reinitialise...");
+                        thread::sleep(Duration::from_secs(3));
+                        cashcode.poll().ok();
+                        thread::sleep(Duration::from_millis(200));
+                        cashcode.poll().ok();
+                        info!("✅ Bill acceptor re-initialised after reset");
+                        let total = cashcode.get_total_amount().unwrap_or(0);
+                        let _ = tx.send(BillEvent::Status(format!("🟢 Disabled · {} ֏ total", total)));
                     }
                 }
             }
@@ -214,11 +264,11 @@ fn init_cashcode(
                     break;
                 }
 
-                // Also log for debugging
                 if let BillEvent::Accepted(_nominal) = event
                     && let Ok(total) = cashcode.get_total_amount()
                 {
                     info!("Total collected in DB: {} dram", total);
+                    let _ = tx.send(BillEvent::Status(format!("🟢 Enabled · {} ֏ total", total)));
                 }
             }
             Ok(_none) => {
@@ -226,6 +276,7 @@ fn init_cashcode(
             }
             Err(e) => {
                 error!("poll error: {}", e);
+                let _ = tx.send(BillEvent::Status(format!("🔴 Poll error: {}", e)));
                 thread::sleep(Duration::from_secs(1));
             }
         }
@@ -239,7 +290,7 @@ fn init_cashcode(
 mod coin_acceptor {
     use super::*;
     use crate::cctalk::{CoinAcceptorCommand, CoinAcceptorEvent};
-    use slint::*;
+    use slint::{Timer, TimerMode};
     use std::sync::mpsc::channel;
 
     pub fn init(
@@ -306,6 +357,12 @@ mod coin_acceptor {
                             }
                             CoinAcceptorEvent::Error(msg) => {
                                 error!("⚠️ {}", msg);
+                                window.set_diag_coin_status(slint::SharedString::from(
+                                    format!("⚠️ {}", msg),
+                                ));
+                            }
+                            CoinAcceptorEvent::Status(s) => {
+                                window.set_diag_coin_status(slint::SharedString::from(s));
                             }
                         }
                     }
@@ -761,6 +818,118 @@ mod donation_handler {
                     }
                 });
             }
+        });
+    }
+}
+
+mod diagnostics_handler {
+    use super::*;
+    use slint::{ModelRc, SharedString, Timer, TimerMode, VecModel};
+
+    const MAX_LOG_LINES: usize = 300;
+
+    async fn check_backend(token: Option<String>) -> String {
+        use http::Request;
+
+        let Some(tok) = token else {
+            return "⚠️ No token configured".to_string();
+        };
+
+        let request = match Request::get("https://gateway.hackem.cc/api/funds?status=open")
+            .header("Authorization", format!("Bearer {}", tok))
+            .body(())
+        {
+            Ok(r) => r,
+            Err(e) => return format!("🔴 Request error: {}", e),
+        };
+
+        match isahc::send_async(request).await {
+            Ok(r) => {
+                let s = r.status();
+                if s.is_success() {
+                    format!("🟢 OK (HTTP {})", s.as_u16())
+                } else if s.as_u16() == 401 {
+                    "⚠️ HTTP 401 — token invalid or expired".to_string()
+                } else {
+                    format!(
+                        "🟡 HTTP {} — {}",
+                        s.as_u16(),
+                        s.canonical_reason().unwrap_or("Unknown")
+                    )
+                }
+            }
+            Err(e) => format!("🔴 Unreachable: {}", e),
+        }
+    }
+
+    pub fn init(
+        app: &MainWindow,
+        log_rx: std::sync::mpsc::Receiver<String>,
+        cashcode_tx: Sender<bill_acceptor::CashCodeCommand>,
+        cctalk_tx: Sender<cctalk::CoinAcceptorCommand>,
+        token: Option<String>,
+    ) {
+        // Build the model and hand it to the window.
+        let log_model = std::rc::Rc::new(VecModel::<SharedString>::default());
+        app.set_diag_logs(ModelRc::from(log_model.clone()));
+
+        // Drain the log channel into the model on every tick.
+        let timer = Timer::default();
+        timer.start(
+            TimerMode::Repeated,
+            std::time::Duration::from_millis(500),
+            move || {
+                while let Ok(line) = log_rx.try_recv() {
+                    log_model.insert(0, SharedString::from(line));
+                    if log_model.row_count() > MAX_LOG_LINES {
+                        log_model.remove(log_model.row_count() - 1);
+                    }
+                }
+            },
+        );
+        std::mem::forget(timer);
+
+        let cashcode_tx_reset = cashcode_tx;
+        app.on_diag_reset_bills(move || {
+            info!("🔄 Diagnostics: resetting bill acceptor");
+            if cashcode_tx_reset
+                .send(bill_acceptor::CashCodeCommand::Reset)
+                .is_err()
+            {
+                error!("Failed to send Reset to bill acceptor");
+            }
+        });
+
+        let cctalk_tx_reset = cctalk_tx;
+        app.on_diag_reset_coins(move || {
+            info!("🔄 Diagnostics: resetting coin acceptor");
+            if cctalk_tx_reset
+                .send(cctalk::CoinAcceptorCommand::Reset)
+                .is_err()
+            {
+                error!("Failed to send Reset to coin acceptor");
+            }
+        });
+
+        app.on_diag_play_sound(|| {
+            info!("🔊 Diagnostics: playing sound");
+            crate::sound::play_yippee();
+        });
+
+        let weak_backend = app.as_weak();
+        app.on_diag_check_backend(move || {
+            let weak = weak_backend.clone();
+            let tok = token.clone();
+            if let Some(w) = weak.upgrade() {
+                w.set_diag_backend_status(SharedString::from("🟡 Checking..."));
+            }
+            slint::spawn_local(async move {
+                let result = check_backend(tok).await;
+                if let Some(w) = weak.upgrade() {
+                    w.set_diag_backend_status(SharedString::from(result));
+                }
+            })
+            .unwrap();
         });
     }
 }

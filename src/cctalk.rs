@@ -52,6 +52,7 @@ const POST_CREDIT_DELAY: Duration = Duration::from_millis(800);
 pub enum CoinAcceptorCommand {
     Enable,
     Disable,
+    Reset,
 }
 
 #[derive(Debug, Clone)]
@@ -59,6 +60,8 @@ pub enum CoinAcceptorEvent {
     /// Coin accepted; value in AMD (smallest unit).
     Accepted(i32),
     Error(String),
+    /// Lifecycle / device-state update for the diagnostics page.
+    Status(String),
 }
 
 // ---------------------------------------------------------------------------
@@ -99,6 +102,7 @@ pub fn run(
 
         loop {
             info!("ccTalk: connecting to {}...", serial_port);
+            let _ = event_tx.send(CoinAcceptorEvent::Status("⏳ Connecting...".to_string()));
             match run_session(
                 &serial_port,
                 event_tx.clone(),
@@ -117,12 +121,17 @@ pub fn run(
                         "ccTalk: connection lost ({}), reconnecting in {:?}",
                         e, RECONNECT_DELAY
                     );
+                    let _ = event_tx.send(CoinAcceptorEvent::Status(format!(
+                        "🔴 Disconnected · reconnecting in {:?}",
+                        RECONNECT_DELAY
+                    )));
                     // Drain any queued commands so we capture the latest
                     // enable/disable intent before sleeping.
                     while let Ok(cmd) = cmd_rx.try_recv() {
                         match cmd {
                             CoinAcceptorCommand::Enable => enabled = true,
                             CoinAcceptorCommand::Disable => enabled = false,
+                            CoinAcceptorCommand::Reset => {} // new session will reset on connect
                         }
                     }
                     tokio::time::sleep(RECONNECT_DELAY).await;
@@ -450,6 +459,13 @@ async fn run_session(
         info!("ccTalk coin acceptor initialised, waiting for enable command...");
     }
 
+    let device_label = format!("{} {}", manufacturer, product);
+    let _ = event_tx.send(CoinAcceptorEvent::Status(format!(
+        "🟢 {} · {}",
+        device_label,
+        if *enabled { "Enabled" } else { "Disabled" }
+    )));
+
     let delay = validator
         .get_polling_priority()
         .await?
@@ -480,6 +496,10 @@ async fn run_session(
                     } else {
                         *enabled = true;
                         info!("ccTalk coin acceptor enabled");
+                        let _ = event_tx.send(CoinAcceptorEvent::Status(format!(
+                            "🟢 {} · Enabled",
+                            device_label
+                        )));
                     }
                 }
                 CoinAcceptorCommand::Disable if *enabled => {
@@ -489,6 +509,22 @@ async fn run_session(
                     } else {
                         *enabled = false;
                         info!("ccTalk coin acceptor disabled");
+                        let _ = event_tx.send(CoinAcceptorEvent::Status(format!(
+                            "🟢 {} · Disabled",
+                            device_label
+                        )));
+                    }
+                }
+                CoinAcceptorCommand::Reset => {
+                    info!("🔄 Resetting ccTalk coin acceptor from diagnostics...");
+                    if let Err(e) = validator.reset_device().await {
+                        error!("Failed to reset ccTalk coin acceptor: {}", e);
+                    } else {
+                        info!("✅ ccTalk coin acceptor reset");
+                        let _ = event_tx.send(CoinAcceptorEvent::Status(format!(
+                            "🟡 {} · Reset complete",
+                            device_label
+                        )));
                     }
                 }
                 _ => {}
