@@ -1,5 +1,11 @@
 import { Button, Palette, ListView } from "std-widgets.slint";
 
+// level: 0 = neutral/grey · 1 = ok/green · 2 = warn/orange · 3 = error/red
+export struct LogEntry {
+    level: int,
+    text: string,
+}
+
 export component Diagnostics inherits Rectangle {
     callback back-clicked();
     callback reset-bills();
@@ -7,10 +13,19 @@ export component Diagnostics inherits Rectangle {
     callback play-sound();
     callback check-backend();
 
-    in-out property <[string]> log-lines: [];
-    in property <string> bill-status: "⏳ Initializing...";
-    in property <string> coin-status: "⏳ Initializing...";
-    in property <string> backend-status: "Not checked";
+    in-out property <[LogEntry]> log-lines: [];
+    in property <LogEntry> bill-status: { level: 0, text: "Initializing..." };
+    in property <LogEntry> coin-status: { level: 0, text: "Initializing..." };
+    in property <LogEntry> backend-status: { level: 0, text: "Not checked" };
+
+    // Action buttons are locked for a brief moment after the page appears so
+    // that the tap gesture that opened diagnostics cannot accidentally trigger them.
+    property <bool> guard: true;
+    Timer {
+        interval: 500ms;
+        running: root.guard;
+        triggered => { root.guard = false; }
+    }
 
     background: Palette.background;
 
@@ -53,23 +68,26 @@ export component Diagnostics inherits Rectangle {
             Button {
                 text: "Reset Bill Acceptor";
                 width: 230px;
+                enabled: !root.guard;
                 clicked => { root.reset-bills(); }
             }
 
             Button {
                 text: "Reset Coin Acceptor";
                 width: 230px;
+                enabled: !root.guard;
                 clicked => { root.reset-coins(); }
             }
 
             Button {
-                text: "▶  Play Sound";
+                text: "Play Sound";
                 width: 180px;
+                enabled: !root.guard;
                 clicked => { root.play-sound(); }
             }
         }
 
-        // ── Status panel ─────────────────────────────────────────────────────
+        // ── Status panel ─────────────────────────────────────────────────
         Rectangle {
             border-radius: 8px;
             border-width: 1px;
@@ -93,8 +111,18 @@ export component Diagnostics inherits Rectangle {
                         width: 130px;
                         vertical-alignment: center;
                     }
+                    // status dot
+                    Rectangle {
+                        width: 10px;
+                        height: 10px;
+                        border-radius: 5px;
+                        y: (parent.height - self.height) / 2;
+                        background: root.bill-status.level == 1 ? #4caf50 :
+                                    root.bill-status.level == 2 ? #ff8c00 :
+                                    root.bill-status.level == 3 ? #f44336 : #808080;
+                    }
                     Text {
-                        text: root.bill-status;
+                        text: root.bill-status.text;
                         font-size: 13px;
                         color: Palette.foreground;
                         vertical-alignment: center;
@@ -115,8 +143,17 @@ export component Diagnostics inherits Rectangle {
                         width: 130px;
                         vertical-alignment: center;
                     }
+                    Rectangle {
+                        width: 10px;
+                        height: 10px;
+                        border-radius: 5px;
+                        y: (parent.height - self.height) / 2;
+                        background: root.coin-status.level == 1 ? #4caf50 :
+                                    root.coin-status.level == 2 ? #ff8c00 :
+                                    root.coin-status.level == 3 ? #f44336 : #808080;
+                    }
                     Text {
-                        text: root.coin-status;
+                        text: root.coin-status.text;
                         font-size: 13px;
                         color: Palette.foreground;
                         vertical-alignment: center;
@@ -137,8 +174,17 @@ export component Diagnostics inherits Rectangle {
                         width: 130px;
                         vertical-alignment: center;
                     }
+                    Rectangle {
+                        width: 10px;
+                        height: 10px;
+                        border-radius: 5px;
+                        y: (parent.height - self.height) / 2;
+                        background: root.backend-status.level == 1 ? #4caf50 :
+                                    root.backend-status.level == 2 ? #ff8c00 :
+                                    root.backend-status.level == 3 ? #f44336 : #808080;
+                    }
                     Text {
-                        text: root.backend-status;
+                        text: root.backend-status.text;
                         font-size: 13px;
                         color: Palette.foreground;
                         vertical-alignment: center;
@@ -149,6 +195,7 @@ export component Diagnostics inherits Rectangle {
                         text: "Check";
                         width: 80px;
                         height: 26px;
+                        enabled: !root.guard;
                         clicked => { root.check-backend(); }
                     }
                 }
@@ -168,7 +215,7 @@ export component Diagnostics inherits Rectangle {
         log-view := ListView {
             vertical-stretch: 1;
 
-            for line[i] in root.log-lines: Rectangle {
+            for entry[i] in root.log-lines: Rectangle {
                 height: 22px;
                 background: mod(i, 2) == 0
                     ? transparent
@@ -180,11 +227,13 @@ export component Diagnostics inherits Rectangle {
                     x: 6px;
                     width: parent.width - 12px;
                     height: parent.height;
-                    text: line;
+                    text: entry.text;
                     font-size: 12px;
                     vertical-alignment: center;
                     overflow: elide;
-                    color: Palette.foreground;
+                    color: entry.level == 3 ? #f44336 :
+                           entry.level == 2 ? #ff8c00 :
+                           Palette.foreground;
                 }
             }
         }

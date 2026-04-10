@@ -39,7 +39,7 @@ impl Default for Config {
             cashcode_serial_port:
                 "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0"
                     .to_string(),
-            cctalk_serial_port: "/dev/ttyUSB0".to_string(),
+            cctalk_serial_port: "/dev/ttyUSB1".to_string(),
             cctalk_coin_overrides: Vec::new(),
             stats_db_path: "data/Stats.db".to_string(),
         }

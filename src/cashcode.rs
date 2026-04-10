@@ -111,7 +111,8 @@ pub enum BillEvent {
     Jam(String),
     Error(String),
     /// Lifecycle / device-state update for the diagnostics page.
-    Status(String),
+    /// level: 0 = neutral · 1 = ok · 2 = warn · 3 = error
+    Status(String, i32),
 }
 
 pub struct CashCode {

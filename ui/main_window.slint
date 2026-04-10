@@ -6,7 +6,7 @@ import { Main } from "pages/main.slint";
 import { Donate } from "pages/donate.slint";
 import { InsertMoney } from "pages/insert_money.slint";
 import { HomeAssistant } from "pages/home_assistant.slint";
-import { Diagnostics } from "pages/diagnostics.slint";
+import { Diagnostics, LogEntry } from "pages/diagnostics.slint";
 
 export { VirtualKeyboardHandler, KeyModel, AutocompleteHandler }
 
@@ -44,10 +44,10 @@ export component MainWindow inherits Window {
     in-out property <int> last-added-amount: 0;
 
     // diagnostics
-    in-out property <[string]> diag-logs: [];
-    in-out property <string> diag-bill-status: "⏳ Initializing...";
-    in-out property <string> diag-coin-status: "⏳ Initializing...";
-    in-out property <string> diag-backend-status: "Not checked";
+    in-out property <[LogEntry]> diag-logs: [];
+    in-out property <LogEntry> diag-bill-status: { level: 0, text: "Initializing..." };
+    in-out property <LogEntry> diag-coin-status: { level: 0, text: "Initializing..." };
+    in-out property <LogEntry> diag-backend-status: { level: 0, text: "Not checked" };
     callback diag-reset-bills();
     callback diag-reset-coins();
     callback diag-play-sound();

@@ -61,7 +61,8 @@ pub enum CoinAcceptorEvent {
     Accepted(i32),
     Error(String),
     /// Lifecycle / device-state update for the diagnostics page.
-    Status(String),
+    /// level: 0 = neutral · 1 = ok · 2 = warn · 3 = error
+    Status(String, i32),
 }
 
 // ---------------------------------------------------------------------------
@@ -102,7 +103,7 @@ pub fn run(
 
         loop {
             info!("ccTalk: connecting to {}...", serial_port);
-            let _ = event_tx.send(CoinAcceptorEvent::Status("⏳ Connecting...".to_string()));
+            let _ = event_tx.send(CoinAcceptorEvent::Status("Connecting...".to_string(), 0));
             match run_session(
                 &serial_port,
                 event_tx.clone(),
@@ -121,10 +122,10 @@ pub fn run(
                         "ccTalk: connection lost ({}), reconnecting in {:?}",
                         e, RECONNECT_DELAY
                     );
-                    let _ = event_tx.send(CoinAcceptorEvent::Status(format!(
-                        "🔴 Disconnected · reconnecting in {:?}",
-                        RECONNECT_DELAY
-                    )));
+                    let _ = event_tx.send(CoinAcceptorEvent::Status(
+                        format!("Disconnected · reconnecting in {:?}", RECONNECT_DELAY),
+                        3,
+                    ));
                     // Drain any queued commands so we capture the latest
                     // enable/disable intent before sleeping.
                     while let Ok(cmd) = cmd_rx.try_recv() {
@@ -460,11 +461,10 @@ async fn run_session(
     }
 
     let device_label = format!("{} {}", manufacturer, product);
-    let _ = event_tx.send(CoinAcceptorEvent::Status(format!(
-        "🟢 {} · {}",
-        device_label,
-        if *enabled { "Enabled" } else { "Disabled" }
-    )));
+    let _ = event_tx.send(CoinAcceptorEvent::Status(
+        format!("{} · {}", device_label, if *enabled { "Enabled" } else { "Disabled" }),
+        1,
+    ));
 
     let delay = validator
         .get_polling_priority()
@@ -496,10 +496,10 @@ async fn run_session(
                     } else {
                         *enabled = true;
                         info!("ccTalk coin acceptor enabled");
-                        let _ = event_tx.send(CoinAcceptorEvent::Status(format!(
-                            "🟢 {} · Enabled",
-                            device_label
-                        )));
+                        let _ = event_tx.send(CoinAcceptorEvent::Status(
+                            format!("{} · Enabled", device_label),
+                            1,
+                        ));
                     }
                 }
                 CoinAcceptorCommand::Disable if *enabled => {
@@ -509,10 +509,10 @@ async fn run_session(
                     } else {
                         *enabled = false;
                         info!("ccTalk coin acceptor disabled");
-                        let _ = event_tx.send(CoinAcceptorEvent::Status(format!(
-                            "🟢 {} · Disabled",
-                            device_label
-                        )));
+                        let _ = event_tx.send(CoinAcceptorEvent::Status(
+                            format!("{} · Disabled", device_label),
+                            1,
+                        ));
                     }
                 }
                 CoinAcceptorCommand::Reset => {
@@ -521,10 +521,10 @@ async fn run_session(
                         error!("Failed to reset ccTalk coin acceptor: {}", e);
                     } else {
                         info!("✅ ccTalk coin acceptor reset");
-                        let _ = event_tx.send(CoinAcceptorEvent::Status(format!(
-                            "🟡 {} · Reset complete",
-                            device_label
-                        )));
+                        let _ = event_tx.send(CoinAcceptorEvent::Status(
+                            format!("{} · Reset complete", device_label),
+                            2,
+                        ));
                     }
                 }
                 _ => {}
