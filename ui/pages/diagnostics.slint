@@ -27,6 +27,32 @@ export component Diagnostics inherits Rectangle {
         triggered => { root.guard = false; }
     }
 
+    // Navigate back after 2 minutes of inactivity.  The component is
+    // destroyed when navigating away, so the timer resets on each entry.
+    property <int> seconds-left: 120;
+    inactivity-timer := Timer {
+        interval: 120s;
+        running: true;
+        triggered => { root.back-clicked(); }
+    }
+    Timer {
+        interval: 1s;
+        running: true;
+        triggered => { if root.seconds-left > 0 { root.seconds-left -= 1; } }
+    }
+
+    // Background TouchArea — any tap resets the inactivity timer.
+    // Placed before the content so foreground buttons still capture their own events.
+    TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => {
+            inactivity-timer.running = false;
+            inactivity-timer.running = true;
+            root.seconds-left = 120;
+        }
+    }
+
     background: Palette.background;
 
     VerticalLayout {
@@ -39,10 +65,22 @@ export component Diagnostics inherits Rectangle {
             spacing: 16px;
             height: 56px;
 
-            Button {
-                text: "← Back";
+            VerticalLayout {
                 width: 130px;
-                clicked => { root.back-clicked(); }
+                alignment: center;
+                spacing: 3px;
+
+                Button {
+                    text: "← Back";
+                    clicked => { root.back-clicked(); }
+                }
+                Text {
+                    text: (root.seconds-left / 60) + ":" + (Math.mod(root.seconds-left, 60) < 10 ? "0" : "") + Math.mod(root.seconds-left, 60);
+                    font-size: 11px;
+                    color: root.seconds-left <= 30 ? #f44336 : Palette.foreground;
+                    opacity: root.seconds-left <= 30 ? 1.0 : 0.45;
+                    horizontal-alignment: center;
+                }
             }
 
             Text {
