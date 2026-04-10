@@ -65,22 +65,10 @@ export component Diagnostics inherits Rectangle {
             spacing: 16px;
             height: 56px;
 
-            VerticalLayout {
+            Button {
+                text: "← Back (" + root.seconds-left + "s)";
                 width: 130px;
-                alignment: center;
-                spacing: 3px;
-
-                Button {
-                    text: "← Back";
-                    clicked => { root.back-clicked(); }
-                }
-                Text {
-                    text: (root.seconds-left / 60) + ":" + (Math.mod(root.seconds-left, 60) < 10 ? "0" : "") + Math.mod(root.seconds-left, 60);
-                    font-size: 11px;
-                    color: root.seconds-left <= 30 ? #f44336 : Palette.foreground;
-                    opacity: root.seconds-left <= 30 ? 1.0 : 0.45;
-                    horizontal-alignment: center;
-                }
+                clicked => { root.back-clicked(); }
             }
 
             Text {
@@ -107,21 +95,36 @@ export component Diagnostics inherits Rectangle {
                 text: "Reset Bill Acceptor";
                 width: 230px;
                 enabled: !root.guard;
-                clicked => { root.reset-bills(); }
+                clicked => {
+                    inactivity-timer.running = false;
+                    inactivity-timer.running = true;
+                    root.seconds-left = 120;
+                    root.reset-bills();
+                }
             }
 
             Button {
                 text: "Re-enumerate Coins";
                 width: 230px;
                 enabled: !root.guard;
-                clicked => { root.reenumerate-coins(); }
+                clicked => {
+                    inactivity-timer.running = false;
+                    inactivity-timer.running = true;
+                    root.seconds-left = 120;
+                    root.reenumerate-coins();
+                }
             }
 
             Button {
                 text: "Play Sound";
                 width: 180px;
                 enabled: !root.guard;
-                clicked => { root.play-sound(); }
+                clicked => {
+                    inactivity-timer.running = false;
+                    inactivity-timer.running = true;
+                    root.seconds-left = 120;
+                    root.play-sound();
+                }
             }
         }
 
@@ -234,7 +237,12 @@ export component Diagnostics inherits Rectangle {
                         width: 80px;
                         height: 26px;
                         enabled: !root.guard;
-                        clicked => { root.check-backend(); }
+                        clicked => {
+                            inactivity-timer.running = false;
+                            inactivity-timer.running = true;
+                            root.seconds-left = 120;
+                            root.check-backend();
+                        }
                     }
                 }
             }

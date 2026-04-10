@@ -1,4 +1,5 @@
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// (level, message): level 0 = info · 1 = warn · 2 = error
 pub type LogLine = (u8, String);
@@ -23,9 +24,13 @@ impl log::Log for DiagLogger {
                 log::Level::Warn => 1,
                 _ => 0,
             };
-            self.tx
-                .try_send((level, record.args().to_string()))
-                .ok();
+            let ts = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default();
+            let secs = ts.as_secs();
+            let (h, m, s) = (secs / 3600 % 24, secs / 60 % 60, secs % 60);
+            let text = format!("{:02}:{:02}:{:02} {}", h, m, s, record.args());
+            self.tx.try_send((level, text)).ok();
         }
     }
 
