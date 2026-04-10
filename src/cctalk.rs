@@ -56,7 +56,9 @@ const POST_CREDIT_DELAY: Duration = Duration::from_millis(800);
 pub enum CoinAcceptorCommand {
     Enable,
     Disable,
-    Reset,
+    /// Triggers a USB-level re-enumeration of the coin acceptor (via udevadm)
+    /// and forces a reconnect.  Solenoids are clicked once the device is found.
+    Reenumerate,
 }
 
 #[derive(Debug, Clone)]
@@ -105,6 +107,9 @@ pub fn run(
     rt.block_on(async move {
         let mut enabled = false;
         let auto = serial_port == AUTO_PORT;
+        // Set to true when a Reenumerate command was processed; causes solenoids
+        // to be clicked once the next session connects successfully.
+        let mut ping_on_connect = false;
 
         loop {
             // When auto-discovery is enabled, scan for the device before each
@@ -136,32 +141,54 @@ pub fn run(
 
             info!("ccTalk: connecting to {}...", port);
             let _ = event_tx.send(CoinAcceptorEvent::Status("Connecting...".to_string(), 0));
-            match run_session(&port, event_tx.clone(), &cmd_rx, &mut enabled, &coin_overrides)
-                .await
+            match run_session(
+                &port,
+                event_tx.clone(),
+                &cmd_rx,
+                &mut enabled,
+                &coin_overrides,
+                ping_on_connect,
+            )
+            .await
             {
                 Ok(()) => {
                     info!("ccTalk: session ended cleanly, exiting");
                     break;
                 }
                 Err(e) => {
-                    error!(
-                        "ccTalk: connection lost ({}), reconnecting in {:?}",
-                        e, RECONNECT_DELAY
-                    );
-                    let _ = event_tx.send(CoinAcceptorEvent::Status(
-                        format!("Disconnected · reconnecting in {:?}", RECONNECT_DELAY),
-                        3,
-                    ));
-                    // Drain any queued commands so we capture the latest
-                    // enable/disable intent before sleeping.
-                    while let Ok(cmd) = cmd_rx.try_recv() {
-                        match cmd {
-                            CoinAcceptorCommand::Enable => enabled = true,
-                            CoinAcceptorCommand::Disable => enabled = false,
-                            CoinAcceptorCommand::Reset => {} // new session will reset on connect
+                    let is_reenumerate = e.to_string() == "reenumerate";
+                    ping_on_connect = is_reenumerate;
+
+                    if is_reenumerate {
+                        info!("ccTalk: waiting for USB device to settle after re-enumeration...");
+                        let _ = event_tx.send(CoinAcceptorEvent::Status(
+                            "Re-enumerating USB · waiting...".to_string(),
+                            0,
+                        ));
+                        tokio::time::sleep(Duration::from_secs(2)).await;
+                    } else {
+                        error!(
+                            "ccTalk: connection lost ({}), reconnecting in {:?}",
+                            e, RECONNECT_DELAY
+                        );
+                        let _ = event_tx.send(CoinAcceptorEvent::Status(
+                            format!("Disconnected · reconnecting in {:?}", RECONNECT_DELAY),
+                            3,
+                        ));
+                        // Drain any queued commands so we capture the latest
+                        // enable/disable intent before sleeping.
+                        while let Ok(cmd) = cmd_rx.try_recv() {
+                            match cmd {
+                                CoinAcceptorCommand::Enable => enabled = true,
+                                CoinAcceptorCommand::Disable => enabled = false,
+                                CoinAcceptorCommand::Reenumerate => {
+                                    ping_on_connect = true;
+                                    reenumerate_usb().await;
+                                }
+                            }
                         }
+                        tokio::time::sleep(RECONNECT_DELAY).await;
                     }
-                    tokio::time::sleep(RECONNECT_DELAY).await;
                 }
             }
         }
@@ -325,6 +352,22 @@ async fn handle_message(
 // Automatic port discovery
 // ---------------------------------------------------------------------------
 
+/// Asks udev to re-add Silicon Labs CP210x USB-serial devices.  This causes
+/// the kernel to re-bind the cp210x driver and re-create `/dev/ttyUSBx` nodes,
+/// which is useful after removing `brltty` or after a device replug.
+async fn reenumerate_usb() {
+    info!("ccTalk: triggering USB re-enumeration for cp210x (idVendor=10c4)...");
+    let status = tokio::process::Command::new("udevadm")
+        .args(["trigger", "--action=add", "--attr-match=idVendor=10c4"])
+        .status()
+        .await;
+    match status {
+        Ok(s) if s.success() => info!("ccTalk: udevadm trigger succeeded"),
+        Ok(s) => warn!("ccTalk: udevadm trigger exited with {}", s),
+        Err(e) => warn!("ccTalk: udevadm trigger failed: {}", e),
+    }
+}
+
 /// Scans available serial ports and returns the name of the first one that
 /// responds to a ccTalk SimplePoll sent to the coin-acceptor address.
 ///
@@ -436,6 +479,7 @@ async fn run_session(
     cmd_rx: &Receiver<CoinAcceptorCommand>,
     enabled: &mut bool,
     coin_overrides: &[[i32; 2]],
+    ping_solenoids: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (transport_tx, transport_rx) = tokio_mpsc::channel(32);
 
@@ -557,6 +601,19 @@ async fn run_session(
         1,
     ));
 
+    // Click solenoids as confirmation after a re-enumeration reconnect.
+    if ping_solenoids {
+        info!("ccTalk: clicking solenoids as re-enumeration confirmation");
+        if let Err(e) = validator
+            .send_command(
+                cc_talk_host::device::device_commands::TestSolenoidsCommand::new(1),
+            )
+            .await
+        {
+            warn!("ccTalk: solenoid ping failed: {}", e);
+        }
+    }
+
     let delay = validator
         .get_polling_priority()
         .await?
@@ -606,17 +663,14 @@ async fn run_session(
                         ));
                     }
                 }
-                CoinAcceptorCommand::Reset => {
-                    info!("🔄 Resetting ccTalk coin acceptor from diagnostics...");
-                    if let Err(e) = validator.reset_device().await {
-                        error!("Failed to reset ccTalk coin acceptor: {}", e);
-                    } else {
-                        info!("✅ ccTalk coin acceptor reset");
-                        let _ = event_tx.send(CoinAcceptorEvent::Status(
-                            format!("{} · Reset complete", device_label),
-                            2,
-                        ));
-                    }
+                CoinAcceptorCommand::Reenumerate => {
+                    info!("ccTalk: re-enumeration requested via diagnostics");
+                    let _ = event_tx.send(CoinAcceptorEvent::Status(
+                        "Re-enumerating USB...".to_string(),
+                        0,
+                    ));
+                    reenumerate_usb().await;
+                    return Err("reenumerate".into());
                 }
                 _ => {}
             }

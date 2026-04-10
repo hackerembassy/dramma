@@ -49,7 +49,7 @@ export component MainWindow inherits Window {
     in-out property <LogEntry> diag-coin-status: { level: 0, text: "Initializing..." };
     in-out property <LogEntry> diag-backend-status: { level: 0, text: "Not checked" };
     callback diag-reset-bills();
-    callback diag-reset-coins();
+    callback diag-reenumerate-coins();
     callback diag-play-sound();
     callback diag-check-backend();
 
@@ -180,7 +180,7 @@ export component MainWindow inherits Window {
             backend-status: root.diag-backend-status;
             back-clicked => { root.current-page = Page.Main; }
             reset-bills => { root.diag-reset-bills(); }
-            reset-coins => { root.diag-reset-coins(); }
+            reenumerate-coins => { root.diag-reenumerate-coins(); }
             play-sound => { root.diag-play-sound(); }
             check-backend => { root.diag-check-backend(); }
         }

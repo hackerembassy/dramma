@@ -9,7 +9,7 @@ export struct LogEntry {
 export component Diagnostics inherits Rectangle {
     callback back-clicked();
     callback reset-bills();
-    callback reset-coins();
+    callback reenumerate-coins();
     callback play-sound();
     callback check-backend();
 
@@ -73,10 +73,10 @@ export component Diagnostics inherits Rectangle {
             }
 
             Button {
-                text: "Reset Coin Acceptor";
+                text: "Re-enumerate Coins";
                 width: 230px;
                 enabled: !root.guard;
-                clicked => { root.reset-coins(); }
+                clicked => { root.reenumerate-coins(); }
             }
 
             Button {

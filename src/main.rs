@@ -916,14 +916,14 @@ mod diagnostics_handler {
             }
         });
 
-        let cctalk_tx_reset = cctalk_tx;
-        app.on_diag_reset_coins(move || {
-            info!("🔄 Diagnostics: resetting coin acceptor");
-            if cctalk_tx_reset
-                .send(cctalk::CoinAcceptorCommand::Reset)
+        let cctalk_tx_reenumerate = cctalk_tx;
+        app.on_diag_reenumerate_coins(move || {
+            info!("ccTalk: re-enumeration requested from diagnostics");
+            if cctalk_tx_reenumerate
+                .send(cctalk::CoinAcceptorCommand::Reenumerate)
                 .is_err()
             {
-                error!("Failed to send Reset to coin acceptor");
+                error!("Failed to send Reenumerate to coin acceptor");
             }
         });
 
