@@ -39,6 +39,10 @@ const ECHO: bool = true;
 /// Delay between reconnect attempts when the serial connection is lost.
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 
+/// Value for `serial_port` that triggers automatic discovery across all
+/// available USB serial ports.
+const AUTO_PORT: &str = "auto";
+
 /// Number of consecutive poll errors before the connection is declared lost
 /// and a reconnect is attempted.
 const MAX_CONSECUTIVE_ERRORS: u32 = 3;
@@ -100,18 +104,40 @@ pub fn run(
 
     rt.block_on(async move {
         let mut enabled = false;
+        let auto = serial_port == AUTO_PORT;
 
         loop {
-            info!("ccTalk: connecting to {}...", serial_port);
+            // When auto-discovery is enabled, scan for the device before each
+            // session.  This handles USB port number changes on reconnect.
+            let port = if auto {
+                let _ = event_tx.send(CoinAcceptorEvent::Status(
+                    "Scanning for ccTalk device...".to_string(),
+                    0,
+                ));
+                loop {
+                    match find_cctalk_port().await {
+                        Some(p) => break p,
+                        None => {
+                            warn!(
+                                "ccTalk: no device found, retrying in {:?}",
+                                RECONNECT_DELAY
+                            );
+                            let _ = event_tx.send(CoinAcceptorEvent::Status(
+                                format!("No device found · retrying in {:?}", RECONNECT_DELAY),
+                                2,
+                            ));
+                            tokio::time::sleep(RECONNECT_DELAY).await;
+                        }
+                    }
+                }
+            } else {
+                serial_port.clone()
+            };
+
+            info!("ccTalk: connecting to {}...", port);
             let _ = event_tx.send(CoinAcceptorEvent::Status("Connecting...".to_string(), 0));
-            match run_session(
-                &serial_port,
-                event_tx.clone(),
-                &cmd_rx,
-                &mut enabled,
-                &coin_overrides,
-            )
-            .await
+            match run_session(&port, event_tx.clone(), &cmd_rx, &mut enabled, &coin_overrides)
+                .await
             {
                 Ok(()) => {
                     info!("ccTalk: session ended cleanly, exiting");
@@ -293,6 +319,71 @@ async fn handle_message(
     deserialize(&mut recv_pkt, msg.checksum_type).map_err(|_| TransportError::ChecksumError)?;
 
     Ok(recv_buf[..total_len].to_vec())
+}
+
+// ---------------------------------------------------------------------------
+// Automatic port discovery
+// ---------------------------------------------------------------------------
+
+/// Scans available serial ports and returns the name of the first one that
+/// responds to a ccTalk SimplePoll sent to the coin-acceptor address.
+///
+/// On Linux only USB serial converters (`/dev/ttyUSB*`, `/dev/ttyACM*`) are
+/// probed to avoid disturbing unrelated devices.
+async fn find_cctalk_port() -> Option<String> {
+    let ports = match tokio_serial::available_ports() {
+        Ok(p) => p,
+        Err(e) => {
+            warn!("ccTalk: cannot enumerate serial ports: {}", e);
+            return None;
+        }
+    };
+
+    for port_info in ports {
+        let name = port_info.port_name;
+        #[cfg(target_os = "linux")]
+        {
+            if !name.contains("ttyUSB") && !name.contains("ttyACM") {
+                continue;
+            }
+        }
+        info!("ccTalk: probing {}...", name);
+        if try_cctalk_ping(&name).await {
+            info!("ccTalk: device found on {}", name);
+            return Some(name);
+        }
+    }
+
+    warn!("ccTalk: no ccTalk device found on any serial port");
+    None
+}
+
+/// Opens `port_name` and sends a ccTalk SimplePoll to the coin-acceptor
+/// address.  Returns `true` if a valid reply arrives within 300 ms.
+async fn try_cctalk_ping(port_name: &str) -> bool {
+    let (transport_tx, transport_rx) = tokio_mpsc::channel(4);
+
+    let transport = CcTalkSerialTransport::new(
+        transport_rx,
+        port_name.to_string(),
+        Duration::from_millis(300),
+    );
+
+    let transport_task = tokio::spawn(async move {
+        let _ = transport.run().await;
+    });
+
+    let address = match Category::CoinAcceptor.default_address() {
+        Address::Single(addr) | Address::SingleAndRange(addr, _) => addr,
+    };
+    let validator = CoinValidator::new(
+        Device::new(address, Category::CoinAcceptor, ChecksumType::Crc8),
+        transport_tx,
+    );
+
+    let ok = validator.simple_poll().await.is_ok();
+    transport_task.abort();
+    ok
 }
 
 // ---------------------------------------------------------------------------
