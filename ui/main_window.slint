@@ -33,6 +33,10 @@ export component MainWindow inherits Window {
     // confetti state
     in-out property <bool> show-confetti: false;
     in-out property <bool> confetti-falling: false;
+    // inactivity countdown (seconds remaining, updated by Rust)
+    in-out property <int> inactivity-seconds-left: 180;
+    // read by Rust to guard inactivity timeout from firing on wrong page
+    out property <bool> on-insert-money-page: current-page == Page.InsertMoney;
 
     // toast state — set by Rust when a bill or coin is accepted
     in-out property <int> last-added-amount: 0;
@@ -46,6 +50,20 @@ export component MainWindow inherits Window {
     callback fetch-funds();  // fetches available-funds and available-fund-ids
     callback fetch-usernames();  // fetches available-usernames for autocomplete
     callback confetti-started();  // tells rust to start confetti dismiss timer
+    callback enter-insert-money();  // tells rust to start inactivity timer
+    callback leave-insert-money();  // tells rust to stop inactivity timer (manual exit)
+    callback activity-on-insert-money();  // tells rust to reset inactivity timer
+    // invoked by rust on inactivity timeout:
+    callback cancel-insert-money();  // auto-cancel: go back to donate page
+    cancel-insert-money => {
+        root.current-page = Page.Donate;
+    }
+    callback show-confetti-after-auto-approve();  // auto-approve: go to main + show confetti
+    show-confetti-after-auto-approve => {
+        root.current-page = Page.Main;
+        root.show-confetti = true;
+        root.confetti-started();
+    }
 
     title: "Donation Machine";
     width: 1280px;
@@ -89,15 +107,30 @@ export component MainWindow inherits Window {
                 root.session-amount = 0;  // reset session amount
                 root.start-accepting-money();  // enable bill acceptor
                 root.current-page = Page.InsertMoney;
+                root.enter-insert-money();  // start inactivity timer
             }
         }
         if current-page == Page.InsertMoney: InsertMoney {
             current-amount: root.session-amount;
             username: root.session-username;
             fundname: root.session-fund-name;
+            seconds-left: root.inactivity-seconds-left;
+
+            // Reset inactivity timer whenever a bill is accepted
+            changed current-amount => {
+                if self.current-amount > 0 {
+                    root.activity-on-insert-money();
+                }
+            }
+
+            // Reset inactivity timer on any screen tap
+            screen-tapped => {
+                root.activity-on-insert-money();
+            }
             last-added-amount <=> root.last-added-amount;
 
             cancel-clicked => {
+                root.leave-insert-money();  // stop inactivity timers
                 root.stop-accepting-money();  // disable bill acceptor
                 root.session-amount = 0;
                 root.session-username = "";
@@ -106,6 +139,7 @@ export component MainWindow inherits Window {
 
             done-clicked(username, amount) => {
                 debug("done with username:", username, "amount:", amount, "fund:", root.session-fund-id);
+                root.leave-insert-money();  // stop inactivity timers
                 root.stop-accepting-money();  // disable bill acceptor
                 // call the root callback so rust can handle the donation
                 root.done-clicked(username, root.session-fund-id, amount);

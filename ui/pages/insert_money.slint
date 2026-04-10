@@ -5,11 +5,21 @@ export component InsertMoney inherits Rectangle {
     in-out property <int> last-added-amount: 0;
     in property <string> username: "";
     in property <string> fundname: "";
+    in property <int> seconds-left: 180;  // countdown updated by Rust
 
     callback cancel-clicked();
     callback done-clicked(string, int);  // username, amount
+    callback screen-tapped();  // any tap on screen resets inactivity timer
 
     background: Palette.background;
+
+    // Background TouchArea — catches taps on any empty area of the screen.
+    // Placed first so it renders behind the content; foreground buttons still capture their own events.
+    TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { root.screen-tapped(); }
+    }
 
     // Internal toast state.
     // display-amount holds the last non-zero amount so the text stays correct
@@ -198,6 +208,30 @@ export component InsertMoney inherits Rectangle {
             color: Palette.foreground;
             horizontal-alignment: center;
             opacity: 0.6;
+        }
+
+        // inactivity countdown warning
+        Rectangle {
+            height: 40px;
+            border-radius: 8px;
+            background: root.seconds-left <= 30 ? #ff4444.with-alpha(0.15) :
+                        root.seconds-left <= 60 ? #ff8800.with-alpha(0.12) :
+                        transparent;
+
+            Text {
+                text: root.current-amount > 0
+                    ? "⏱ Auto-approves in " + root.seconds-left + "s"
+                    : "⏱ Auto-cancels in " + root.seconds-left + "s";
+                font-size: 14px;
+                color: root.seconds-left <= 30 ? #ff4444 :
+                       root.seconds-left <= 60 ? #ff8800 :
+                       Palette.foreground;
+                opacity: root.seconds-left <= 60 ? 1.0 : 0.5;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
         }
     }
 }
