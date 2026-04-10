@@ -57,7 +57,13 @@ pub fn main() {
     let cashcode_tx = bill_acceptor::init(&main_window, &config);
     let cctalk_tx = coin_acceptor::init(&main_window, &config, cashcode_tx.clone());
     fund_fetcher::init(&main_window, &config);
-    diagnostics_handler::init(&main_window, log_rx, cashcode_tx.clone(), cctalk_tx.clone(), config.token.clone());
+    diagnostics_handler::init(
+        &main_window,
+        log_rx,
+        cashcode_tx.clone(),
+        cctalk_tx.clone(),
+        config.token.clone(),
+    );
     donation_handler::init(&main_window, &config, cashcode_tx, cctalk_tx);
     home_assistant_handler::init(&main_window, &config);
 
@@ -214,7 +220,10 @@ fn init_cashcode(
     thread::sleep(Duration::from_millis(200));
 
     let total = cashcode.get_total_amount().unwrap_or(0);
-    let _ = tx.send(BillEvent::Status(format!("Disabled · {} ֏ total", total), 1));
+    let _ = tx.send(BillEvent::Status(
+        format!("Disabled · {} ֏ total", total),
+        1,
+    ));
 
     // Keep bill acceptor disabled until UI requests to enable it
     info!("Bill acceptor initialized, waiting for enable command...");
@@ -231,7 +240,8 @@ fn init_cashcode(
                     } else {
                         info!("✅ Bill acceptor enabled");
                         let total = cashcode.get_total_amount().unwrap_or(0);
-                        let _ = tx.send(BillEvent::Status(format!("Enabled · {} ֏ total", total), 1));
+                        let _ =
+                            tx.send(BillEvent::Status(format!("Enabled · {} ֏ total", total), 1));
                     }
                 }
                 CashCodeCommand::Disable => {
@@ -241,7 +251,10 @@ fn init_cashcode(
                     } else {
                         info!("✅ Bill acceptor disabled");
                         let total = cashcode.get_total_amount().unwrap_or(0);
-                        let _ = tx.send(BillEvent::Status(format!("Disabled · {} ֏ total", total), 1));
+                        let _ = tx.send(BillEvent::Status(
+                            format!("Disabled · {} ֏ total", total),
+                            1,
+                        ));
                     }
                 }
                 CashCodeCommand::Reset => {
@@ -258,7 +271,10 @@ fn init_cashcode(
                         cashcode.poll().ok();
                         info!("✅ Bill acceptor re-initialised after reset");
                         let total = cashcode.get_total_amount().unwrap_or(0);
-                        let _ = tx.send(BillEvent::Status(format!("Disabled · {} ֏ total", total), 1));
+                        let _ = tx.send(BillEvent::Status(
+                            format!("Disabled · {} ֏ total", total),
+                            1,
+                        ));
                     }
                 }
             }
@@ -896,7 +912,13 @@ mod diagnostics_handler {
             std::time::Duration::from_millis(500),
             move || {
                 while let Ok((lvl, text)) = log_rx.try_recv() {
-                    log_model.insert(0, LogEntry { level: lvl as i32, text: text.into() });
+                    log_model.insert(
+                        0,
+                        LogEntry {
+                            level: lvl as i32,
+                            text: text.into(),
+                        },
+                    );
                     if log_model.row_count() > MAX_LOG_LINES {
                         log_model.remove(log_model.row_count() - 1);
                     }
@@ -937,12 +959,18 @@ mod diagnostics_handler {
             let weak = weak_backend.clone();
             let tok = token.clone();
             if let Some(w) = weak.upgrade() {
-                w.set_diag_backend_status(LogEntry { level: 0, text: "Checking...".into() });
+                w.set_diag_backend_status(LogEntry {
+                    level: 0,
+                    text: "Checking...".into(),
+                });
             }
             slint::spawn_local(async move {
                 let (level, text) = check_backend(tok).await;
                 if let Some(w) = weak.upgrade() {
-                    w.set_diag_backend_status(LogEntry { level, text: text.into() });
+                    w.set_diag_backend_status(LogEntry {
+                        level,
+                        text: text.into(),
+                    });
                 }
             })
             .unwrap();

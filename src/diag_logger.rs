@@ -47,8 +47,7 @@ pub fn init() -> Receiver<LogLine> {
         .filter_level(log::LevelFilter::Info)
         .build();
     let max_level = inner.filter();
-    log::set_boxed_logger(Box::new(DiagLogger { inner, tx }))
-        .expect("logger already initialised");
+    log::set_boxed_logger(Box::new(DiagLogger { inner, tx })).expect("logger already initialised");
     log::set_max_level(max_level);
     rx
 }

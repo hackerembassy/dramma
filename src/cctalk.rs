@@ -123,10 +123,7 @@ pub fn run(
                     match find_cctalk_port().await {
                         Some(p) => break p,
                         None => {
-                            warn!(
-                                "ccTalk: no device found, retrying in {:?}",
-                                RECONNECT_DELAY
-                            );
+                            warn!("ccTalk: no device found, retrying in {:?}", RECONNECT_DELAY);
                             let _ = event_tx.send(CoinAcceptorEvent::Status(
                                 format!("No device found · retrying in {:?}", RECONNECT_DELAY),
                                 2,
@@ -597,7 +594,11 @@ async fn run_session(
 
     let device_label = format!("{} {}", manufacturer, product);
     let _ = event_tx.send(CoinAcceptorEvent::Status(
-        format!("{} · {}", device_label, if *enabled { "Enabled" } else { "Disabled" }),
+        format!(
+            "{} · {}",
+            device_label,
+            if *enabled { "Enabled" } else { "Disabled" }
+        ),
         1,
     ));
 
@@ -605,9 +606,7 @@ async fn run_session(
     if ping_solenoids {
         info!("ccTalk: clicking solenoids as re-enumeration confirmation");
         if let Err(e) = validator
-            .send_command(
-                cc_talk_host::device::device_commands::TestSolenoidsCommand::new(1),
-            )
+            .send_command(cc_talk_host::device::device_commands::TestSolenoidsCommand::new(1))
             .await
         {
             warn!("ccTalk: solenoid ping failed: {}", e);
