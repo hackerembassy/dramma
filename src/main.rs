@@ -503,7 +503,7 @@ mod fund_fetcher {
 mod donation_handler {
     use super::*;
 
-    const INACTIVITY_TIMEOUT_SECS: u64 = 180; // 3 minutes
+    const INACTIVITY_TIMEOUT: Duration = Duration::from_mins(2); // 2 minutes
 
     /// Spawns a single-shot inactivity timer. Returns the Timer (must be kept alive).
     fn spawn_inactivity_timer(
@@ -514,7 +514,7 @@ mod donation_handler {
         let timer = slint::Timer::default();
         timer.start(
             slint::TimerMode::SingleShot,
-            Duration::from_secs(INACTIVITY_TIMEOUT_SECS),
+            INACTIVITY_TIMEOUT,
             move || {
                 if let Some(window) = weak.upgrade() {
                     // Guard: only act if we're still on the InsertMoney page
@@ -640,10 +640,13 @@ mod donation_handler {
         let timer_enter = inactivity_timer.clone();
         let ticker_enter = countdown_ticker.clone();
         app.on_enter_insert_money(move || {
-            info!("⏱️  InsertMoney entered — starting {INACTIVITY_TIMEOUT_SECS}s inactivity timer");
+            info!(
+                "⏱️  InsertMoney entered — starting {:?} inactivity timer",
+                INACTIVITY_TIMEOUT
+            );
             // Reset the countdown display
             if let Some(w) = weak_enter.upgrade() {
-                w.set_inactivity_seconds_left(INACTIVITY_TIMEOUT_SECS as i32);
+                w.set_inactivity_seconds_left(INACTIVITY_TIMEOUT.as_secs() as _);
             }
             // Main timeout timer
             let timer = spawn_inactivity_timer(
@@ -680,7 +683,7 @@ mod donation_handler {
             info!("⏱️  Bill inserted — resetting inactivity timer");
             // Reset countdown display
             if let Some(w) = weak_activity.upgrade() {
-                w.set_inactivity_seconds_left(INACTIVITY_TIMEOUT_SECS as i32);
+                w.set_inactivity_seconds_left(INACTIVITY_TIMEOUT.as_secs() as _);
             }
             // Replace main timeout timer
             let timer = spawn_inactivity_timer(
