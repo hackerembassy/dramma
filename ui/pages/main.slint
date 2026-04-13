@@ -3,20 +3,45 @@ import { LineEdit, Button } from "std-widgets.slint";
 export component Main inherits Rectangle {
     callback donate-clicked();
     callback home-assistant-clicked();
+    callback secret-tapped();
+
+    // Secret: tap the logo 5 times to open diagnostics.
+    property <int> tap-count: 0;
+    // Reset the counter 3 s after the last tap if it hasn't reached 5.
+    tap-reset := Timer {
+        interval: 3s;
+        running: root.tap-count > 0 && root.tap-count < 5;
+        triggered => { root.tap-count = 0; }
+    }
 
     VerticalLayout {
         alignment: space-between;
         padding: 16px;
         spacing: 8px;
 
-        // logo at top center
+        // logo at top center — tap 5× to open diagnostics
         HorizontalLayout {
             alignment: center;
-            
-            Image {
-                source: @image-url("../assets/xkem.png");
-                max-width: 233px;
-                max-height: 250px;
+
+            Rectangle {
+                width: 233px;
+                height: 250px;
+
+                Image {
+                    width: 233px;
+                    height: 250px;
+                    source: @image-url("../assets/xkem.png");
+                }
+
+                TouchArea {
+                    clicked => {
+                        root.tap-count += 1;
+                        if root.tap-count >= 5 {
+                            root.tap-count = 0;
+                            root.secret-tapped();
+                        }
+                    }
+                }
             }
         }
 

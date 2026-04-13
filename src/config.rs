@@ -21,6 +21,9 @@ pub struct Config {
     pub token: Option<String>,
     pub home_assistant_url: String,
     pub cashcode_serial_port: String,
+    /// Serial port for the ccTalk coin acceptor.  Set to `"auto"` (the
+    /// default) to probe all available USB serial ports at startup and on
+    /// every reconnect, which handles `/dev/ttyUSBx` number changes.
     pub cctalk_serial_port: String,
     /// Override the value for specific coin positions (channels).
     /// Use this when the device has misconfigured coin IDs.
@@ -39,7 +42,7 @@ impl Default for Config {
             cashcode_serial_port:
                 "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0"
                     .to_string(),
-            cctalk_serial_port: "/dev/ttyUSB0".to_string(),
+            cctalk_serial_port: "auto".to_string(),
             cctalk_coin_overrides: Vec::new(),
             stats_db_path: "data/Stats.db".to_string(),
         }
