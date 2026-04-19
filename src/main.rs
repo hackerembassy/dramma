@@ -637,10 +637,10 @@ mod home_assistant_handler {
             slint::TimerMode::Repeated,
             std::time::Duration::from_millis(200),
             move || {
-                if rx.try_recv().is_ok() {
-                    if let Some(window) = weak.upgrade() {
-                        window.invoke_close_hass_remote();
-                    }
+                if rx.try_recv().is_ok()
+                    && let Some(window) = weak.upgrade()
+                {
+                    window.invoke_close_hass_remote();
                 }
             },
         );
