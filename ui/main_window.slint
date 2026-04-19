@@ -5,6 +5,7 @@ import { ConfettiOverlay } from "confetti.slint";
 import { Main } from "pages/main.slint";
 import { Donate } from "pages/donate.slint";
 import { InsertMoney } from "pages/insert_money.slint";
+import { InsertCoins } from "pages/insert_coins.slint";
 import { HomeAssistant } from "pages/home_assistant.slint";
 import { Diagnostics, LogEntry } from "pages/diagnostics.slint";
 
@@ -14,6 +15,7 @@ enum Page {
     Main,
     Donate,
     InsertMoney,
+    InsertCoins,
     HomeAssistant,
     Diagnostics,
     Top,
@@ -77,6 +79,20 @@ export component MainWindow inherits Window {
         root.confetti-started();
     }
 
+    // game-automate mode
+    /// Game names fed from Rust config (empty → UI uses built-in list)
+    in-out property <[string]> game-names: [];
+    /// Countdown seconds remaining in the active game session (updated by Rust)
+    in-out property <int> game-seconds-left: 0;
+    /// Guard: true while on the InsertCoins page
+    out property <bool> on-insert-coins-page: current-page == Page.InsertCoins;
+
+    callback launch-game(int, string);  // amount, game-name  — Rust starts RetroArch
+    callback game-time-expired();       // Rust calls when session timer fires
+    game-time-expired => {
+        root.current-page = Page.Main;
+    }
+
     title: "Donation Machine";
     width: 1280px;
     height: 1024px;
@@ -90,6 +106,12 @@ export component MainWindow inherits Window {
             home-assistant-clicked => {
                 root.show-home-assistant();
                 root.current-page = Page.HomeAssistant;
+            }
+
+            play-clicked => {
+                root.session-amount = 0;
+                root.start-accepting-money();
+                root.current-page = Page.InsertCoins;
             }
 
             secret-tapped => {
@@ -165,6 +187,24 @@ export component MainWindow inherits Window {
                 root.current-page = Page.Main;
                 root.show-confetti = true;
                 root.confetti-started();
+            }
+        }
+        if current-page == Page.InsertCoins: InsertCoins {
+            current-amount <=> root.session-amount;
+            last-added-amount <=> root.last-added-amount;
+            game-names: root.game-names;
+
+            cancel-clicked => {
+                root.stop-accepting-money();
+                root.session-amount = 0;
+                root.current-page = Page.Main;
+            }
+
+            launch-clicked(amount, game-name) => {
+                root.stop-accepting-money();
+                root.session-amount = 0;
+                root.launch-game(amount, game-name);
+                root.current-page = Page.Main;
             }
         }
         if current-page == Page.HomeAssistant: HomeAssistant {

@@ -11,6 +11,7 @@ mod donation;
 mod error;
 mod funds;
 mod home_assistant;
+mod retroarch;
 mod sound;
 
 use cashcode::{BillEvent, CashCode};
@@ -66,6 +67,7 @@ pub fn main() {
     );
     donation_handler::init(&main_window, &config, cashcode_tx, cctalk_tx);
     home_assistant_handler::init(&main_window, &config);
+    game_handler::init(&main_window, &config);
 
     main_window.run().unwrap();
 }
@@ -1005,6 +1007,145 @@ mod home_assistant_handler {
         app.on_hide_home_assistant(move || {
             info!("Hiding Home Assistant page, closing Chromium");
             chromium_hide.close();
+        });
+    }
+}
+
+mod game_handler {
+    use super::*;
+    use crate::config::GameEntry;
+    use crate::retroarch::RetroArchManager;
+    use slint::{Timer, TimerMode};
+    use std::sync::Arc;
+
+    pub fn init(app: &MainWindow, config: &Config) {
+        // Populate game-names from config (empty list → UI uses built-in fallback)
+        if !config.games.is_empty() {
+            let names: Vec<slint::SharedString> = config
+                .games
+                .iter()
+                .map(|g| slint::SharedString::from(g.name.clone()))
+                .collect();
+            app.set_game_names(slint::ModelRc::new(slint::VecModel::from(names)));
+        }
+
+        let retroarch = Arc::new(RetroArchManager::new(&config.retroarch_command));
+        let games = config.games.clone();
+
+        // Active timers — kept alive via Rc<RefCell<>>
+        let session_timer: Rc<RefCell<Option<Timer>>> = Rc::new(RefCell::new(None));
+        let two_min_timer: Rc<RefCell<Option<Timer>>> = Rc::new(RefCell::new(None));
+        let one_min_timer: Rc<RefCell<Option<Timer>>> = Rc::new(RefCell::new(None));
+        let tick_timer: Rc<RefCell<Option<Timer>>> = Rc::new(RefCell::new(None));
+
+        let weak = app.as_weak();
+
+        app.on_launch_game({
+            let retroarch = retroarch.clone();
+            let games = games.clone();
+            let session_timer = session_timer.clone();
+            let two_min_timer = two_min_timer.clone();
+            let one_min_timer = one_min_timer.clone();
+            let tick_timer = tick_timer.clone();
+            let weak = weak.clone();
+
+            move |amount, game_name| {
+                // Compute session duration: 100 AMD = 300 seconds
+                let total_secs = (amount as u64) * 3;
+                info!(
+                    "🎮 Game session: {} AMD → {} sec, game: {}",
+                    amount, total_secs, game_name
+                );
+
+                // Find the matching GameEntry (if configured), otherwise use a blank entry
+                // so RetroArch launches with its own saved config.
+                let entry: GameEntry = games
+                    .iter()
+                    .find(|g| g.name == game_name.as_str())
+                    .cloned()
+                    .unwrap_or_else(|| GameEntry {
+                        name: game_name.to_string(),
+                        core: String::new(),
+                        rom: String::new(),
+                    });
+
+                if let Err(e) = retroarch.launch(&entry) {
+                    error!("🎮 Failed to launch RetroArch: {}", e);
+                    // No RetroArch → still start the UI session so the user isn't stuck
+                }
+
+                // Initialise countdown display
+                if let Some(w) = weak.upgrade() {
+                    w.set_game_seconds_left(total_secs as i32);
+                }
+
+                // ── 1-second countdown ticker ──────────────────────────────────
+                {
+                    let weak_tick = weak.clone();
+                    let ticker = Timer::default();
+                    ticker.start(TimerMode::Repeated, Duration::from_secs(1), move || {
+                        if let Some(w) = weak_tick.upgrade() {
+                            let cur = w.get_game_seconds_left();
+                            if cur > 0 {
+                                w.set_game_seconds_left(cur - 1);
+                            }
+                        }
+                    });
+                    *tick_timer.borrow_mut() = Some(ticker);
+                }
+
+                // ── "2 minutes left" milestone ────────────────────────────────
+                if total_secs > 120 {
+                    let fire_at = Duration::from_secs(total_secs - 120);
+                    let t = Timer::default();
+                    t.start(TimerMode::SingleShot, fire_at, || {
+                        info!("🔊 Announcing: 2 minutes left");
+                        crate::sound::play_two_minutes_left();
+                    });
+                    *two_min_timer.borrow_mut() = Some(t);
+                }
+
+                // ── "1 minute left" milestone ─────────────────────────────────
+                if total_secs > 60 {
+                    let fire_at = Duration::from_secs(total_secs - 60);
+                    let t = Timer::default();
+                    t.start(TimerMode::SingleShot, fire_at, || {
+                        info!("🔊 Announcing: 1 minute left");
+                        crate::sound::play_one_minute_left();
+                    });
+                    *one_min_timer.borrow_mut() = Some(t);
+                }
+
+                // ── Session-end timer ─────────────────────────────────────────
+                {
+                    let retroarch_end = retroarch.clone();
+                    let weak_end = weak.clone();
+                    let tick_end = tick_timer.clone();
+                    let two_end = two_min_timer.clone();
+                    let one_end = one_min_timer.clone();
+
+                    let t = Timer::default();
+                    t.start(
+                        TimerMode::SingleShot,
+                        Duration::from_secs(total_secs),
+                        move || {
+                            info!("🎮 Game session expired — closing RetroArch");
+                            retroarch_end.close();
+
+                            // Stop all running timers
+                            *tick_end.borrow_mut() = None;
+                            *two_end.borrow_mut() = None;
+                            *one_end.borrow_mut() = None;
+
+                            if let Some(w) = weak_end.upgrade() {
+                                w.set_game_seconds_left(0);
+                                w.invoke_game_time_expired();
+                            }
+                        },
+                    );
+                    *session_timer.borrow_mut() = Some(t);
+                }
+            }
         });
     }
 }

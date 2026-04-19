@@ -3,6 +3,7 @@ import { LineEdit, Button } from "std-widgets.slint";
 export component Main inherits Rectangle {
     callback donate-clicked();
     callback home-assistant-clicked();
+    callback play-clicked();
     callback secret-tapped();
 
     // Secret: tap the logo 5 times to open diagnostics.
@@ -58,7 +59,7 @@ export component Main inherits Rectangle {
 
             Button {
                 text: "DONATE";
-                width: 350px;
+                width: 280px;
                 height: 120px;
                 
                 clicked => {
@@ -67,8 +68,18 @@ export component Main inherits Rectangle {
             }
 
             Button {
+                text: "🎮 PLAY";
+                width: 280px;
+                height: 120px;
+
+                clicked => {
+                    root.play-clicked();
+                }
+            }
+
+            Button {
                 text: "HASS";
-                width: 350px;
+                width: 280px;
                 height: 120px;
                 
                 clicked => {
