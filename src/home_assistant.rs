@@ -148,9 +148,8 @@ pub fn start_close_listener(port: u16, tx: Sender<()>) {
                 b"HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\n\r\n",
             );
         } else {
-            let _ = stream.write_all(
-                b"HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\n\r\nNot Found",
-            );
+            let _ =
+                stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\n\r\nNot Found");
         }
     }
 }
