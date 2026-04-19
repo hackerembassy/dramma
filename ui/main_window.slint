@@ -47,6 +47,12 @@ export component MainWindow inherits Window {
     callback fetch-usernames();  // fetches available-usernames for autocomplete
     callback confetti-started();  // tells rust to start confetti dismiss timer
 
+    /// Called from Rust when HASS sends a POST /close-hass request.
+    public function close-hass-remote() {
+        root.hide-home-assistant();
+        root.current-page = Page.Main;
+    }
+
     title: "Donation Machine";
     width: 1280px;
     height: 1024px;

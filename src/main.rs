@@ -623,5 +623,27 @@ mod home_assistant_handler {
             info!("Hiding Home Assistant page, closing Chromium");
             chromium_hide.close();
         });
+
+        // HTTP listener so HASS can POST /close-hass to dismiss its own page
+        let (tx, rx) = std::sync::mpsc::channel::<()>();
+        let port = config.hass_api_port;
+        thread::spawn(move || {
+            home_assistant::start_close_listener(port, tx);
+        });
+
+        let weak = app.as_weak();
+        let timer = slint::Timer::default();
+        timer.start(
+            slint::TimerMode::Repeated,
+            std::time::Duration::from_millis(200),
+            move || {
+                if rx.try_recv().is_ok() {
+                    if let Some(window) = weak.upgrade() {
+                        window.invoke_close_hass_remote();
+                    }
+                }
+            },
+        );
+        std::mem::forget(timer);
     }
 }

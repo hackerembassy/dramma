@@ -20,6 +20,8 @@ pub enum ConfigError {
 pub struct Config {
     pub token: Option<String>,
     pub home_assistant_url: String,
+    /// Port for the HTTP listener that accepts `POST /close-hass` from HASS.
+    pub hass_api_port: u16,
     pub cashcode_serial_port: String,
     pub cctalk_serial_port: String,
     /// Override the value for specific coin positions (channels).
@@ -36,6 +38,7 @@ impl Default for Config {
         Self {
             token: None,
             home_assistant_url: "https://ha.hackem.cc/web-dramma/0?BrowserID=dramma".to_string(),
+            hass_api_port: 8321,
             cashcode_serial_port:
                 "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0"
                     .to_string(),
