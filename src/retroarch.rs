@@ -77,6 +77,7 @@ impl RetroArchManager {
     }
 
     /// Returns `true` if RetroArch is currently running.
+    #[allow(dead_code)]
     pub fn is_running(&self) -> bool {
         self.process.lock().unwrap().is_some()
     }
