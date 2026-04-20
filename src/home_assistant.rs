@@ -1,5 +1,8 @@
 use log::{error, info};
+use std::io::{Read, Write};
+use std::net::TcpListener;
 use std::process::{Child, Command};
+use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
 /// Manages a Chromium subprocess for displaying Home Assistant
@@ -30,7 +33,7 @@ impl ChromiumManager {
         // Try chromium first, then chromium-browser as fallback (different Debian versions)
         let command_result = Command::new("chromium")
             .arg("--app=".to_string() + url)
-            .arg("--window-size=1280,940")
+            .arg("--start-fullscreen")
             .arg("--window-position=0,0")
             .arg("--disable-infobars")
             .arg("--noerrdialogs")
@@ -50,7 +53,7 @@ impl ChromiumManager {
                 // Fallback to chromium-browser
                 Command::new("chromium-browser")
                     .arg("--app=".to_string() + url)
-                    .arg("--window-size=1280,940")
+                    .arg("--start-fullscreen")
                     .arg("--window-position=0,0")
                     .arg("--disable-infobars")
                     .arg("--noerrdialogs")
@@ -106,5 +109,47 @@ impl ChromiumManager {
 impl Drop for ChromiumManager {
     fn drop(&mut self) {
         self.close();
+    }
+}
+
+/// Starts a simple HTTP listener for remote control from Home Assistant.
+/// When a `POST /close-hass` request is received, sends a signal through `tx`.
+pub fn start_close_listener(port: u16, tx: Sender<()>) {
+    let addr = format!("0.0.0.0:{}", port);
+    let listener = match TcpListener::bind(&addr) {
+        Ok(l) => l,
+        Err(e) => {
+            error!("Failed to bind HASS close listener on {}: {}", addr, e);
+            return;
+        }
+    };
+    info!("🏠 Home Assistant close listener on port {}", port);
+
+    for stream in listener.incoming() {
+        let Ok(mut stream) = stream else {
+            continue;
+        };
+        let mut buf = [0u8; 512];
+        let Ok(n) = stream.read(&mut buf) else {
+            continue;
+        };
+        let request = String::from_utf8_lossy(&buf[..n]);
+        let first_line = request.lines().next().unwrap_or("");
+
+        if first_line.starts_with("POST /close-hass") {
+            info!("🏠 Received remote close-hass request");
+            let _ = tx.send(());
+            let _ = stream.write_all(
+                b"HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: 2\r\n\r\nOK",
+            );
+        } else if first_line.starts_with("OPTIONS") {
+            // CORS preflight
+            let _ = stream.write_all(
+                b"HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\n\r\n",
+            );
+        } else {
+            let _ =
+                stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\n\r\nNot Found");
+        }
     }
 }

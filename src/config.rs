@@ -19,9 +19,7 @@ pub enum ConfigError {
 #[derive(Debug, Clone, Deserialize)]
 pub struct GameEntry {
     pub name: String,
-    /// Path to the libretro core `.so` file (e.g. `/path/to/nestopia_libretro.so`).
     pub core: String,
-    /// Path to the ROM file.
     pub rom: String,
 }
 
@@ -32,20 +30,10 @@ pub struct Config {
     pub home_assistant_url: String,
     pub hass_api_port: u16,
     pub cashcode_serial_port: String,
-    /// Serial port for the ccTalk coin acceptor.  Set to `"auto"` (the
-    /// default) to probe all available USB serial ports at startup and on
-    /// every reconnect, which handles `/dev/ttyUSBx` number changes.
     pub cctalk_serial_port: String,
-    /// Override the value for specific coin positions (channels).
-    /// Use this when the device has misconfigured coin IDs.
-    /// Format in dramma.toml:
-    ///   cctalk_coin_overrides = [[1, 50], [3, 500]]
-    /// means position 1 → 50 AMD, position 3 → 500 AMD.
     pub cctalk_coin_overrides: Vec<[i32; 2]>,
     pub stats_db_path: String,
-    /// Command used to launch RetroArch (default: `"retroarch"`).
     pub retroarch_command: String,
-    /// List of playable games. If empty, the UI shows a built-in demo list.
     pub games: Vec<GameEntry>,
 }
 

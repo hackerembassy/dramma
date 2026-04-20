@@ -1,6 +1,6 @@
-# dramma 🎮💸
+# dramma 
 
-Donation kiosk + arcade machine for Hackerembassy.  
+Donation kiosk + arcade machine for Hacker Embassy.  
 Accepts cash (bills + coins), processes donations, and now lets people insert coins to play retro games on RetroArch.
 
 ---
@@ -21,7 +21,7 @@ The app starts fullscreen. Tap the logo **5 times** to open the diagnostics pane
 Create `.config/dramma.toml` next to the binary (or in the working directory you run from):
 
 ```toml
-token = "your-bearer-token"
+token = "your-bearer-token" # For Bot donates
 
 # Optional overrides (these are the defaults):
 home_assistant_url    = "https://ha.hackem.cc/web-dramma/0?BrowserID=dramma"
@@ -41,75 +41,9 @@ Pressing **PLAY** on the main screen takes the user to the coin-insertion screen
 
 When they hit **Launch**, dramma starts RetroArch fullscreen + kiosk and auto-closes it when the time runs out. The speaker will announce "2 minutes left" and "1 minute left".
 
-### Step 1 — Install RetroArch
-
-```bash
-# NixOS
-nix-env -iA nixpkgs.retroarch
-
-# Or add to your system configuration.nix:
-environment.systemPackages = [ pkgs.retroarch ];
-```
-
-Make sure `retroarch` is on `PATH`. By default dramma just calls `retroarch`. You can override this in the config:
-
-```toml
-retroarch_command = "/run/current-system/sw/bin/retroarch"
-```
-
-### Step 2 — Install cores (emulators)
-
-Each game needs a **libretro core** — a `.so` plugin file that emulates a specific console.
-
-```bash
-# Find available cores in nixpkgs:
-nix search nixpkgs libretro
-
-# Install a core, e.g. nestopia (NES emulator):
-nix-env -iA nixpkgs.libretro.nestopia
-
-# Or add to configuration.nix:
-environment.systemPackages = with pkgs.libretro; [
-  nestopia      # NES  (Tetris, Super Mario Bros)
-  fbneo         # Arcade (Pac-Man, Street Fighter II)
-  picodrive     # Sega Genesis (Sonic the Hedgehog)
-  dosbox        # DOS (DOOM)
-  snes9x        # SNES
-];
-```
-
-After install, find where the `.so` files ended up:
-
-```bash
-find /nix/store -name "nestopia_libretro.so" 2>/dev/null
-# → /nix/store/xxxx-nestopia-x.x.x/lib/retroarch/cores/nestopia_libretro.so
-```
-
-> **Tip:** Use a stable symlink if you don't want to update the path after every nixpkgs update:
-> ```nix
-> # In configuration.nix
-> environment.etc."retroarch/cores".source = pkgs.symlinkJoin {
->   name = "retroarch-cores";
->   paths = with pkgs.libretro; [ nestopia fbneo picodrive dosbox ];
-> } + "/lib/retroarch/cores";
-> ```
-> Then paths look like `/etc/retroarch/cores/nestopia_libretro.so`.
-
-### Step 3 — Get your ROMs
-
-Put your ROM files somewhere on the machine, e.g. `/home/dramma/roms/`.
-
-```
-/home/dramma/roms/
-├── tetris.nes
-├── pacman.zip
-├── sonic.md
-└── doom.wad
-```
-
 > ROMs are not included for obvious copyright reasons. You know where to find them.
 
-### Step 4 — Configure games in dramma.toml
+### Configure games in dramma.toml
 
 Add a `[[games]]` block for each game. `name` is what shows up in the UI, `core` is the path to the `.so`, `rom` is the path to your ROM file.
 
@@ -144,7 +78,7 @@ rom  = "/home/dramma/roms/sf2.zip"
 
 If `[[games]]` is **not configured**, the UI shows a built-in placeholder list (same names, no actual cores/ROMs). RetroArch will still launch but will open its own menu — not useful in production.
 
-### Step 5 — Test it manually first
+### Test it manually first
 
 Before trusting the machine to do it, test the exact command dramma will run:
 
@@ -154,16 +88,6 @@ retroarch --fullscreen --kiosk -L /path/to/core_libretro.so /path/to/rom
 
 If the game boots correctly, the config is right. If RetroArch opens its menu instead of loading the game, the core or ROM path is wrong.
 
-### Common issues
-
-| Problem | Fix |
-|---|---|
-| RetroArch opens the menu instead of the game | Wrong core or ROM path. Check paths are correct and the file exists. |
-| `retroarch: command not found` | RetroArch not on PATH. Set `retroarch_command` to the full path. |
-| Game loads but controls don't work | Configure controller mappings inside RetroArch first, then re-enable kiosk mode. |
-| DOOM launches but shows "IWAD not found" | DOOM needs the `.wad` file. Use `doom1.wad` (shareware, freely distributable) or `doom.wad`. |
-| Arcade ROMs (Pac-Man, SF2) don't load | FBNeo needs the ROM in a `.zip` file with the exact internal filenames. Use a verified ROM set. |
-| Session ends but RetroArch is still open | Check that dramma has permission to `kill` the RetroArch process (usually fine if running as the same user). |
 
 ---
 
@@ -175,7 +99,6 @@ If the game boots correctly, the config is right. If RetroArch opens its menu in
 | 100 ֏ | 5 min |
 | 200 ֏ | 10 min |
 | 500 ֏ | 25 min |
-| 1000 ֏ | 50 min |
 
 ---
 
