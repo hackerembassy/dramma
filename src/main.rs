@@ -632,18 +632,15 @@ mod home_assistant_handler {
         });
 
         let weak = app.as_weak();
-        let timer = slint::Timer::default();
-        timer.start(
-            slint::TimerMode::Repeated,
-            std::time::Duration::from_millis(200),
-            move || {
-                if rx.try_recv().is_ok()
-                    && let Some(window) = weak.upgrade()
-                {
-                    window.invoke_close_hass_remote();
-                }
-            },
-        );
-        std::mem::forget(timer);
+        thread::spawn(move || {
+            while rx.recv().is_ok() {
+                let weak = weak.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(window) = weak.upgrade() {
+                        window.invoke_close_hass_remote();
+                    }
+                });
+            }
+        });
     }
 }
