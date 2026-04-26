@@ -2,82 +2,88 @@ import { Button, Palette } from "std-widgets.slint";
 
 export component HomeAssistant inherits Rectangle {
     in-out property <string> home-assistant-url: "";
-    
+
     callback back-clicked();
-    
+
     background: Palette.background;
-    
+
     VerticalLayout {
         alignment: start;
         padding: 16px;
         spacing: 16px;
-        
+
         // back button
         HorizontalLayout {
             alignment: start;
-            
+
             Button {
                 text: "← Back";
                 width: 150px;
                 height: 60px;
-                
+
                 clicked => {
                     root.back-clicked();
                 }
             }
         }
-        
-        // hass iframe placeholder
-        // until slint supports html iframes
+
+        // status panel behind fullscreen Chromium
         Rectangle {
             background: #1a1a1a;
             border-width: 2px;
             border-color: #333333;
             border-radius: 8px;
             vertical-stretch: 1;
-            
+
             VerticalLayout {
                 alignment: center;
                 padding: 32px;
-                
+                spacing: 12px;
+
                 Text {
-                    text: "Home Assistant";
-                    font-size: 28px;
-                    font-weight: 700;
-                    color: #ffffff;
+                    text: "🏠";
+                    font-size: 64px;
                     horizontal-alignment: center;
                 }
-                
-                Rectangle {
-                    height: 20px;
-                }
-                
+
                 Text {
-                    text: root.home-assistant-url != "" ? "Connected to: " + root.home-assistant-url : "No URL configured";
+                    text: "Home Assistant Opened!";
+                    font-size: 28px;
+                    font-weight: 700;
+                    color: #4caf50;
+                    horizontal-alignment: center;
+                }
+
+                Text {
+                    text: "Chromium is running in fullscreen";
                     font-size: 16px;
                     color: #cccccc;
                     horizontal-alignment: center;
+                }
+
+                Rectangle { height: 8px; }
+
+                Text {
+                    text: root.home-assistant-url != "" ? root.home-assistant-url : "No URL configured";
+                    font-size: 13px;
+                    color: #888888;
+                    horizontal-alignment: center;
                     wrap: word-wrap;
                 }
-                
-                Rectangle {
-                    height: 20px;
-                }
-                
+
+                Rectangle { height: 24px; }
+
                 Text {
-                    text: "⚠️ Web view integration needed";
+                    text: "If you see this screen instead of Home Assistant:";
                     font-size: 14px;
+                    font-weight: 600;
                     color: #ff9800;
                     horizontal-alignment: center;
                 }
-                
-                Rectangle {
-                    height: 10px;
-                }
-                
+
                 Text {
-                    text: "if hass did not started,\nconfigure the iframe URL in .config/dramma.toml\nor install chromium huh";
-                    font-size: 12px;
+                    text: "• Make sure chromium is installed\n• Check .config/dramma.toml has the correct home_assistant_url\n• You can close this page with POST /close-hass";
+                    font-size: 13px;
                     color: #999999;
                     horizontal-alignment: center;
                     wrap: word-wrap;
