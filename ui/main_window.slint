@@ -90,6 +90,9 @@ export component MainWindow inherits Window {
     callback launch-game(int, string);  // amount, game-name  — Rust starts RetroArch
     callback game-time-expired();       // Rust calls when session timer fires
     game-time-expired => {
+    /// Called from Rust when HASS sends a POST /close-hass request.
+    public function close-hass-remote() {
+        root.hide-home-assistant();
         root.current-page = Page.Main;
     }
 

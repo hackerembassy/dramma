@@ -19,6 +19,7 @@ pkgs.mkShell {
     libXi
     openssl
     alsa-lib
+    python3
   ];
 
   shellHook = ''
