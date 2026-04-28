@@ -1,36 +1,142 @@
-import { LineEdit, Button } from "std-widgets.slint";
 
+// ─── Palette ──────────────────────────────────────────────────────────────────
+global Theme {
+    out property <color> bg-top:        #0d0d1a;
+    out property <color> bg-bottom:     #12122b;
+    out property <color> card-bg:       #1c1c3a;
+    out property <color> card-border:   #2e2e60;
+    out property <color> accent-donate: #e05a77;
+    out property <color> accent-hass:   #5ab8e0;
+    out property <color> accent-play:   #7de05a;
+    out property <color> text-primary:  #f0eeff;
+    out property <color> text-muted:    #8888bb;
+    out property <color> github-accent: #c9b8ff;
+}
+
+// ─── Feature card ─────────────────────────────────────────────────────────────
+component FeatureCard inherits Rectangle {
+    in property <color>  accent;
+    in property <string> icon;
+    in property <string> label;
+    in property <string> description;
+    callback clicked();
+
+    property <float> hover-factor: 0;
+
+    width: 340px;
+    height: 220px;
+    border-radius: 18px;
+    background: Theme.card-bg;
+    border-width: 1.5px;
+    border-color: accent.mix(Theme.card-border, 0.35);
+    drop-shadow-blur: 20px;
+    drop-shadow-color: accent.with-alpha(0.15);
+    drop-shadow-offset-y: 6px;
+
+    animate border-color { duration: 200ms; easing: ease-out; }
+    animate drop-shadow-color { duration: 200ms; easing: ease-out; }
+
+
+    VerticalLayout {
+        padding: 28px;
+        spacing: 10px;
+        alignment: start;
+
+        // Icon + label row
+        HorizontalLayout {
+            spacing: 12px;
+            alignment: start;
+
+            Text {
+                text: icon;
+                font-size: 36px;
+                vertical-alignment: center;
+            }
+
+            Text {
+                text: label;
+                font-size: 22px;
+                font-weight: 700;
+                color: Theme.text-primary;
+                vertical-alignment: center;
+            }
+        }
+
+        // Divider
+        Rectangle {
+            width: 48px;
+            height: 2px;
+            background: accent.with-alpha(0.6);
+            x: 0px;
+        }
+
+        Text {
+            text: description;
+            font-size: 15px;
+            color: Theme.text-muted;
+            wrap: word-wrap;
+        }
+    }
+
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.move || e.kind == PointerEventKind.up {
+                root.hover-factor = self.has-hover ? 1.0 : 0.0;
+            }
+        }
+    }
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
 export component Main inherits Rectangle {
     callback donate-clicked();
     callback home-assistant-clicked();
+    callback play-clicked();
     callback secret-tapped();
 
-    // Secret: tap the logo 5 times to open diagnostics.
     property <int> tap-count: 0;
-    // Reset the counter 3 s after the last tap if it hasn't reached 5.
     tap-reset := Timer {
         interval: 3s;
         running: root.tap-count > 0 && root.tap-count < 5;
         triggered => { root.tap-count = 0; }
     }
 
-    VerticalLayout {
-        alignment: space-between;
-        padding: 16px;
-        spacing: 8px;
+    background: Theme.bg-top;
 
-        // logo at top center — tap 5× to open diagnostics
+    // Subtle radial gradient overlay in center
+    Rectangle {
+        x: 0;  y: 0;
+        width: parent.width;
+        height: parent.height;
+        background: @linear-gradient(160deg, #1a0d33 0%, #0d0d1a 40%, #0d1a2b 100%);
+    }
+
+    VerticalLayout {
+        alignment: center;
+        spacing: 0px;
+        padding-top: 32px;
+        padding-bottom: 32px;
+        padding-left: 48px;
+        padding-right: 48px;
+
+        // ── Header row: logo + title ────────────────────────────────────────
         HorizontalLayout {
             alignment: center;
+            spacing: 32px;
+            padding-bottom: 8px;
 
+            // Logo — tap 5× for diagnostics
             Rectangle {
-                width: 233px;
-                height: 250px;
+                width: 120px;
+                height: 128px;
 
                 Image {
-                    width: 233px;
-                    height: 250px;
+                    width: 120px;
+                    height: 128px;
                     source: @image-url("../assets/xkem.png");
+                    image-fit: contain;
                 }
 
                 TouchArea {
@@ -43,36 +149,117 @@ export component Main inherits Rectangle {
                     }
                 }
             }
-        }
 
-        // spacer to push button to bottom
-        Rectangle {
-            vertical-stretch: 1;
-            background: transparent;
-        }
+            // Title + tagline
+            VerticalLayout {
+                alignment: center;
+                spacing: 6px;
 
-        // buttons at bottom center
-        HorizontalLayout {
-            alignment: center;
-            spacing: 16px;
+                Text {
+                    text: "Welcome to dram'ma!";
+                    font-size: 46px;
+                    font-weight: 800;
+                    color: Theme.text-primary;
+                }
 
-            Button {
-                text: "DONATE";
-                width: 350px;
-                height: 120px;
-                
-                clicked => {
-                    root.donate-clicked();
+                Text {
+                    text: "Your friendly Hacker Embassy station";
+                    font-size: 18px;
+                    color: Theme.text-muted;
+                    font-weight: 400;
                 }
             }
+        }
 
-            Button {
-                text: "HASS";
-                width: 350px;
-                height: 120px;
-                
-                clicked => {
-                    root.home-assistant-clicked();
+        // ── Subtitle ────────────────────────────────────────────────────────
+        HorizontalLayout {
+            alignment: center;
+            padding-top: 12px;
+            padding-bottom: 32px;
+
+            Text {
+                text: "Here you can:";
+                font-size: 22px;
+                font-weight: 600;
+                color: Theme.github-accent;
+            }
+        }
+
+        // ── Feature cards ───────────────────────────────────────────────────
+        HorizontalLayout {
+            alignment: center;
+            spacing: 24px;
+
+            FeatureCard {
+                accent: Theme.accent-donate;
+                icon: "💸";
+                label: "Donate";
+                description: "Support Hacker Embassy directly.\nEvery coin counts!";
+                clicked => { root.donate-clicked(); }
+            }
+
+            FeatureCard {
+                accent: Theme.accent-hass;
+                icon: "🏠";
+                label: "Control Space";
+                description: "Manage lights, climate & more\nvia Home Assistant.";
+                clicked => { root.home-assistant-clicked(); }
+            }
+
+            FeatureCard {
+                accent: Theme.accent-play;
+                icon: "🎮";
+                label: "Play Games";
+                description: "Insert coins and enjoy\nretro games on the machine!";
+                clicked => { root.play-clicked(); }
+            }
+        }
+
+        // ── Contribute footer ───────────────────────────────────────────────
+        HorizontalLayout {
+            alignment: center;
+            padding-top: 36px;
+            spacing: 8px;
+
+            Text {
+                text: "Wanna contribute?";
+                font-size: 16px;
+                color: Theme.text-muted;
+                vertical-alignment: center;
+            }
+
+            Text {
+                text: "PR to";
+                font-size: 16px;
+                color: Theme.text-muted;
+                vertical-alignment: center;
+            }
+
+            HorizontalLayout {
+                padding-left: 10px;
+                padding-right: 10px;
+                padding-top: 4px;
+                padding-bottom: 4px;
+                height: 32px;
+
+                Rectangle {
+                    border-radius: 8px;
+                    background: Theme.github-accent.with-alpha(0.12);
+                    border-width: 1px;
+                    border-color: Theme.github-accent.with-alpha(0.4);
+
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 10px;
+
+                        Text {
+                            text: "github.com/hackerembassy/dramma";
+                            font-size: 15px;
+                            color: Theme.github-accent;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
                 }
             }
         }

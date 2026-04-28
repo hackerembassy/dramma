@@ -1,0 +1,256 @@
+import { Button, Palette } from "std-widgets.slint";
+
+export component InsertCoins inherits Rectangle {
+    // ─── Inputs ───────────────────────────────────────────────────────────────
+    in-out property <int>  current-amount: 0;
+    in-out property <int>  last-added-amount: 0;
+    /// Game names passed in from Rust (may be empty → shows built-in list)
+    in property <[string]> game-names: [];
+
+    // ─── Callbacks ────────────────────────────────────────────────────────────
+    callback cancel-clicked();
+    callback launch-clicked(int, string);  // amount, game-name
+
+    // ─── Internal state ───────────────────────────────────────────────────────
+    property <int>    selected-game-index: 0;
+    property <string> selected-game-name:
+        root.game-names.length > 0
+            ? root.game-names[root.selected-game-index]
+            : builtin-games[root.selected-game-index];
+
+    // Built-in fallback game list (shown when no games are configured in TOML)
+    property <[string]> builtin-games: [
+        "Tetris",
+        "DOOM",
+        "Pac-Man",
+        "Street Fighter II",
+        "Sonic the Hedgehog",
+    ];
+    property <int> game-count:
+        root.game-names.length > 0
+            ? root.game-names.length
+            : root.builtin-games.length;
+
+    // Playtime computation: 100 AMD = 5 min = 300 s
+    property <int> play-seconds: root.current-amount * 3;  // 100 AMD → 300 s
+    property <int> play-min: root.play-seconds / 60;
+    property <int> play-sec: root.play-seconds - root.play-min * 60;
+
+    // ─── Toast state ──────────────────────────────────────────────────────────
+    property <int>  display-amount: 0;
+    property <bool> toast-active: false;
+
+    Timer { interval: 16ms;   running: root.last-added-amount != 0 && !root.toast-active;
+        triggered => { root.display-amount = root.last-added-amount; root.toast-active = true; } }
+    Timer { interval: 1100ms; running: root.last-added-amount != 0;
+        triggered => { root.last-added-amount = 0; } }
+    Timer { interval: 600ms;  running: root.last-added-amount == 0 && root.toast-active;
+        triggered => { root.toast-active = false; } }
+
+    background: Palette.background;
+
+    // ─── Layout ───────────────────────────────────────────────────────────────
+    HorizontalLayout {
+        padding: 24px;
+        spacing: 24px;
+
+        // ── LEFT PANEL: Game Selector ─────────────────────────────────────────
+        Rectangle {
+            width: 420px;
+            border-radius: 16px;
+            background: Palette.color-scheme == ColorScheme.dark ? #1a1a2e : #eeeef7;
+
+            VerticalLayout {
+                padding: 20px;
+                spacing: 12px;
+
+                Text {
+                    text: "🎮 Select Game";
+                    font-size: 22px;
+                    font-weight: 700;
+                    color: Palette.foreground;
+                    horizontal-alignment: center;
+                }
+
+                Rectangle { height: 4px; }
+
+                // Game list
+                for i in root.game-count: game-row := Rectangle {
+                    height: 72px;
+                    border-radius: 12px;
+                    background: root.selected-game-index == i
+                        ? #6c5ce7
+                        : (Palette.color-scheme == ColorScheme.dark ? #2d2d4a : #d8d8ee);
+                    animate background { duration: 150ms; }
+
+                    Text {
+                        text: root.game-names.length > 0
+                            ? root.game-names[i]
+                            : root.builtin-games[i];
+                        font-size: 20px;
+                        font-weight: root.selected-game-index == i ? 700 : 400;
+                        color: root.selected-game-index == i ? #ffffff : Palette.foreground;
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                        animate color { duration: 150ms; }
+                    }
+
+                    TouchArea {
+                        clicked => { root.selected-game-index = i; }
+                    }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+            }
+        }
+
+        // ── RIGHT PANEL: Coin Insertion ────────────────────────────────────────
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: start;
+            spacing: 20px;
+
+            // Header row (cancel button left, title center)
+            HorizontalLayout {
+                alignment: start;
+                spacing: 16px;
+
+                Button {
+                    text: "← Cancel";
+                    width: 150px;
+                    height: 56px;
+                    clicked => { root.cancel-clicked(); }
+                }
+
+                Text {
+                    text: "Insert Money to Play";
+                    font-size: 28px;
+                    font-weight: 700;
+                    color: Palette.foreground;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    horizontal-alignment: center;
+                }
+            }
+
+            // Rate info
+            Rectangle {
+                height: 44px;
+                border-radius: 10px;
+                background: #6c5ce7.with-alpha(0.12);
+
+                Text {
+                    text: "100 ֏ = 5 min   ·   50 ֏ = 2 min 30 sec";
+                    font-size: 16px;
+                    color: #6c5ce7;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+
+            // Amount display with toast overlay
+            Rectangle {
+                height: 140px;
+                clip: false;
+
+                amount-box := Rectangle {
+                    width: 100%;
+                    height: 100%;
+                    border-radius: 16px;
+                    background: Palette.color-scheme == ColorScheme.dark ? #2a2a2a : #f5f5f5;
+                    border-width: 3px;
+                    border-color: root.current-amount > 0 ? #6c5ce7 : #cccccc;
+                    animate border-color { duration: 250ms; }
+
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 4px;
+
+                        Text {
+                            text: root.current-amount + " ֏";
+                            font-size: 62px;
+                            font-weight: 700;
+                            color: root.current-amount > 0 ? #6c5ce7 : Palette.foreground;
+                            horizontal-alignment: center;
+                            animate color { duration: 250ms; }
+                        }
+                    }
+                }
+
+                // Rising toast
+                toast-text := Text {
+                    text: "+" + root.display-amount + " ֏";
+                    color: #6c5ce7;
+                    font-size: 38px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                    width: parent.width;
+                    y: root.toast-active ? -90px : -20px;
+                    opacity: root.last-added-amount != 0 ? 1.0 : 0.0;
+                    animate opacity { duration: 500ms; }
+                    animate y { duration: 1000ms; easing: ease-in-out; }
+                }
+            }
+
+            // Playtime label
+            Rectangle {
+                height: 64px;
+                border-radius: 12px;
+                background: root.current-amount >= 50
+                    ? #00b894.with-alpha(0.15)
+                    : transparent;
+                animate background { duration: 300ms; }
+
+                Text {
+                    text: root.current-amount >= 50
+                        ? "⏱ Play time: " + root.play-min + " min " + (root.play-sec > 0 ? root.play-sec + " sec" : "")
+                        : "Insert money to see your play time";
+                    font-size: 22px;
+                    font-weight: 600;
+                    color: root.current-amount >= 50 ? #00b894 : Palette.foreground;
+                    opacity: root.current-amount >= 50 ? 1.0 : 0.5;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                    animate color { duration: 300ms; }
+                    animate opacity { duration: 300ms; }
+                }
+            }
+
+            Rectangle { vertical-stretch: 1; }
+
+            // LAUNCH button
+            HorizontalLayout {
+                alignment: center;
+
+                launch-btn := Button {
+                    text: root.current-amount >= 50
+                        ? "🚀 Launch  " + root.selected-game-name
+                        : "🚀 Launch  (insert money first)";
+                    primary: true;
+                    enabled: root.current-amount >= 50;
+                    height: 110px;
+
+                    clicked => {
+                        root.launch-clicked(root.current-amount, root.selected-game-name);
+                    }
+                }
+            }
+
+            // Disabled hint
+            if root.current-amount < 50: Text {
+                text: "Minimum 50 ֏ to start playing";
+                font-size: 14px;
+                color: Palette.foreground;
+                opacity: 0.5;
+                horizontal-alignment: center;
+            }
+        }
+    }
+}

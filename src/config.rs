@@ -15,25 +15,26 @@ pub enum ConfigError {
     ParseError(#[from] toml::de::Error),
 }
 
+/// A single playable game entry, configured via `dramma.toml`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct GameEntry {
+    pub name: String,
+    pub core: String,
+    pub rom: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct Config {
     pub token: Option<String>,
     pub home_assistant_url: String,
-    /// Port for the HTTP listener that accepts `POST /close-hass` from HASS.
     pub hass_api_port: u16,
     pub cashcode_serial_port: String,
-    /// Serial port for the ccTalk coin acceptor.  Set to `"auto"` (the
-    /// default) to probe all available USB serial ports at startup and on
-    /// every reconnect, which handles `/dev/ttyUSBx` number changes.
     pub cctalk_serial_port: String,
-    /// Override the value for specific coin positions (channels).
-    /// Use this when the device has misconfigured coin IDs.
-    /// Format in dramma.toml:
-    ///   cctalk_coin_overrides = [[1, 50], [3, 500]]
-    /// means position 1 → 50 AMD, position 3 → 500 AMD.
     pub cctalk_coin_overrides: Vec<[i32; 2]>,
     pub stats_db_path: String,
+    pub retroarch_command: String,
+    pub games: Vec<GameEntry>,
 }
 
 impl Default for Config {
@@ -45,9 +46,11 @@ impl Default for Config {
             cashcode_serial_port:
                 "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0"
                     .to_string(),
-            cctalk_serial_port: "auto".to_string(),
+            cctalk_serial_port: "/dev/ttyUSB0".to_string(),
             cctalk_coin_overrides: Vec::new(),
             stats_db_path: "data/Stats.db".to_string(),
+            retroarch_command: "retroarch".to_string(),
+            games: Vec::new(),
         }
     }
 }

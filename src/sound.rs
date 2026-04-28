@@ -6,13 +6,21 @@ use std::thread;
 use rodio::{Decoder, DeviceSinkBuilder, Player};
 
 const YIPPEE_WAV: &[u8] = include_bytes!("../ui/assets/yippee.wav");
+const TWO_MINUTES_LEFT_WAV: &[u8] = include_bytes!("../ui/assets/two_minutes_left.wav");
+const ONE_MINUTE_LEFT_WAV: &[u8] = include_bytes!("../ui/assets/one_minute_left.wav");
 
-static AUDIO_TX: OnceLock<SyncSender<()>> = OnceLock::new();
+enum SoundEvent {
+    Yippee,
+    TwoMinutesLeft,
+    OneMinuteLeft,
+}
 
-/// Initializes the audio subsystem. Must be called once at startup before `play_yippee`.
+static AUDIO_TX: OnceLock<SyncSender<SoundEvent>> = OnceLock::new();
+
+/// Initializes the audio subsystem. Must be called once at startup before any `play_*` calls.
 pub fn init() {
     AUDIO_TX.get_or_init(|| {
-        let (tx, rx) = mpsc::sync_channel::<()>(8);
+        let (tx, rx) = mpsc::sync_channel::<SoundEvent>(8);
 
         thread::spawn(move || {
             let handle = match DeviceSinkBuilder::open_default_sink() {
@@ -25,8 +33,13 @@ pub fn init() {
 
             let mixer = handle.mixer();
 
-            while rx.recv().is_ok() {
-                let source = match Decoder::try_from(Cursor::new(YIPPEE_WAV)) {
+            while let Ok(event) = rx.recv() {
+                let wav_bytes: &[u8] = match event {
+                    SoundEvent::Yippee => YIPPEE_WAV,
+                    SoundEvent::TwoMinutesLeft => TWO_MINUTES_LEFT_WAV,
+                    SoundEvent::OneMinuteLeft => ONE_MINUTE_LEFT_WAV,
+                };
+                let source = match Decoder::try_from(Cursor::new(wav_bytes)) {
                     Ok(s) => s,
                     Err(e) => {
                         log::error!("Failed to decode WAV: {}", e);
@@ -43,15 +56,29 @@ pub fn init() {
     });
 }
 
-/// Plays the yippee sound.
-/// Requires `init()` to have been called at startup.
-pub fn play_yippee() {
+fn play_sound(event: SoundEvent) {
     match AUDIO_TX.get() {
         Some(tx) => {
-            if let Err(e) = tx.try_send(()) {
-                log::warn!("Audio busy, skipping yippee: {}", e);
+            if let Err(e) = tx.try_send(event) {
+                log::warn!("Audio busy, skipping sound: {}", e);
             }
         }
         None => log::error!("Audio not initialized — call sound::init() at startup"),
     }
+}
+
+/// Plays the yippee sound.
+/// Requires `init()` to have been called at startup.
+pub fn play_yippee() {
+    play_sound(SoundEvent::Yippee);
+}
+
+/// Plays the "2 minutes left" announcement.
+pub fn play_two_minutes_left() {
+    play_sound(SoundEvent::TwoMinutesLeft);
+}
+
+/// Plays the "1 minute left" announcement.
+pub fn play_one_minute_left() {
+    play_sound(SoundEvent::OneMinuteLeft);
 }
