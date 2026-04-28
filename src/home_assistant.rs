@@ -116,7 +116,7 @@ impl Drop for ChromiumManager {
 /// When a `POST /close-hass` request is received, sends a signal through `tx`.
 #[allow(dead_code)]
 pub fn start_close_listener(port: u16, tx: Sender<()>) {
-    let addr = format!("0.0.0.0:{}", port);
+    let addr = format!("127.0.0.1:{}", port);
     let listener = match TcpListener::bind(&addr) {
         Ok(l) => l,
         Err(e) => {

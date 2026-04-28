@@ -1069,6 +1069,12 @@ mod game_handler {
             let weak = weak.clone();
 
             move |amount, game_name| {
+                // Clear any existing timers first
+                *session_timer.borrow_mut() = None;
+                *two_min_timer.borrow_mut() = None;
+                *one_min_timer.borrow_mut() = None;
+                *tick_timer.borrow_mut() = None;
+
                 // Compute session duration: 100 AMD = 300 seconds
                 let total_secs = (amount as u64) * 3;
                 info!(
