@@ -26,13 +26,6 @@ impl CashCodeDb {
             [],
         )?;
 
-        for nominal in [1000, 2000, 5000, 10000, 20000] {
-            db.execute(
-                "INSERT OR IGNORE INTO accepted_bills (nominal, quantity) VALUES (?1, 0)",
-                [nominal],
-            )?;
-        }
-
         db.execute(
             "CREATE TABLE IF NOT EXISTS accepted_coins (
                 nominal INTEGER PRIMARY KEY,
@@ -47,7 +40,8 @@ impl CashCodeDb {
     pub fn record_bill(&self, nominal: BillNominal) -> Result<(), CashCodeError> {
         let db = self.conn.lock().unwrap();
         db.execute(
-            "UPDATE accepted_bills SET quantity = quantity + 1 WHERE nominal = ?1",
+            "INSERT INTO accepted_bills (nominal, quantity) VALUES (?1, 1)
+             ON CONFLICT(nominal) DO UPDATE SET quantity = quantity + 1",
             [nominal.value()],
         )?;
         Ok(())
