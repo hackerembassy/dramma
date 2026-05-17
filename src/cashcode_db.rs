@@ -34,6 +34,16 @@ impl CashCodeDb {
             [],
         )?;
 
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS payment_log (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                inserted_at INTEGER NOT NULL,
+                kind      TEXT NOT NULL CHECK(kind IN ('bill', 'coin')),
+                nominal   INTEGER NOT NULL
+            )",
+            [],
+        )?;
+
         Ok(())
     }
 
@@ -42,6 +52,10 @@ impl CashCodeDb {
         db.execute(
             "INSERT INTO accepted_bills (nominal, quantity) VALUES (?1, 1)
              ON CONFLICT(nominal) DO UPDATE SET quantity = quantity + 1",
+            [nominal.value()],
+        )?;
+        db.execute(
+            "INSERT INTO payment_log (inserted_at, kind, nominal) VALUES (unixepoch(), 'bill', ?1)",
             [nominal.value()],
         )?;
         Ok(())
@@ -61,6 +75,10 @@ impl CashCodeDb {
         db.execute(
             "INSERT INTO accepted_coins (nominal, quantity) VALUES (?1, 1)
              ON CONFLICT(nominal) DO UPDATE SET quantity = quantity + 1",
+            [value],
+        )?;
+        db.execute(
+            "INSERT INTO payment_log (inserted_at, kind, nominal) VALUES (unixepoch(), 'coin', ?1)",
             [value],
         )?;
         Ok(())
