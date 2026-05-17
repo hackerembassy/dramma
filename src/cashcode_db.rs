@@ -33,6 +33,14 @@ impl CashCodeDb {
             )?;
         }
 
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS accepted_coins (
+                nominal INTEGER PRIMARY KEY,
+                quantity INTEGER NOT NULL
+            )",
+            [],
+        )?;
+
         Ok(())
     }
 
@@ -52,6 +60,16 @@ impl CashCodeDb {
             db.prepare("SELECT nominal, quantity FROM accepted_bills ORDER BY nominal")?;
         let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
         rows.collect::<SqlResult<Vec<_>>>().map_err(Into::into)
+    }
+
+    pub fn record_coin(&self, value: i32) -> Result<(), CashCodeError> {
+        let db = self.conn.lock().unwrap();
+        db.execute(
+            "INSERT INTO accepted_coins (nominal, quantity) VALUES (?1, 1)
+             ON CONFLICT(nominal) DO UPDATE SET quantity = quantity + 1",
+            [value],
+        )?;
+        Ok(())
     }
 
     pub fn get_total_amount(&self) -> Result<i32, CashCodeError> {

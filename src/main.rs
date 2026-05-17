@@ -16,6 +16,7 @@ mod retroarch;
 mod sound;
 
 use cashcode::{BillEvent, CashCode};
+use cashcode_db::CashCodeDb;
 use config::Config;
 use log::{error, info, warn};
 use slint::Model;
@@ -56,8 +57,15 @@ pub fn main() {
 
     virtual_keyboard::init(&main_window);
     autocomplete_handler::init(&main_window);
-    let cashcode_tx = bill_acceptor::init(&main_window, &config);
-    let cctalk_tx = coin_acceptor::init(&main_window, &config, cashcode_tx.clone());
+    let db = match CashCodeDb::open(&config.stats_db_path) {
+        Ok(db) => db,
+        Err(e) => {
+            error!("Failed to open stats database: {}", e);
+            return;
+        }
+    };
+    let cashcode_tx = bill_acceptor::init(&main_window, &config, db.clone());
+    let cctalk_tx = coin_acceptor::init(&main_window, &config, cashcode_tx.clone(), db);
     fund_fetcher::init(&main_window, &config);
     diagnostics_handler::init(
         &main_window,
@@ -86,7 +94,7 @@ mod bill_acceptor {
         Reset,
     }
 
-    pub fn init(app: &MainWindow, config: &Config) -> Sender<CashCodeCommand> {
+    pub fn init(app: &MainWindow, config: &Config, db: CashCodeDb) -> Sender<CashCodeCommand> {
         let weak = app.as_weak();
 
         // Create a channel for bill events (from CashCode to UI)
@@ -98,7 +106,7 @@ mod bill_acceptor {
         // Start CashCode driver in a separate thread
         thread::spawn({
             let config = config.clone();
-            move || match init_cashcode(&config, event_tx, cmd_rx) {
+            move || match init_cashcode(&config, db, event_tx, cmd_rx) {
                 Ok(_) => info!("CashCode driver stopped"),
                 Err(e) => error!("CashCode driver error: {}", e),
             }
@@ -195,13 +203,14 @@ mod bill_acceptor {
 
 fn init_cashcode(
     config: &Config,
+    db: CashCodeDb,
     tx: Sender<BillEvent>,
     cmd_rx: std::sync::mpsc::Receiver<bill_acceptor::CashCodeCommand>,
 ) -> Result<(), cashcode::CashCodeError> {
     use bill_acceptor::CashCodeCommand;
 
     info!("Initializing CashCode driver...");
-    let mut cashcode = match CashCode::new(&config.cashcode_serial_port, &config.stats_db_path) {
+    let mut cashcode = match CashCode::new(&config.cashcode_serial_port, db) {
         Ok(c) => c,
         Err(e) => {
             let _ = tx.send(BillEvent::Status(e.to_string(), 3));
@@ -324,6 +333,7 @@ mod coin_acceptor {
         app: &MainWindow,
         config: &Config,
         cashcode_tx: Sender<bill_acceptor::CashCodeCommand>,
+        db: CashCodeDb,
     ) -> Sender<CoinAcceptorCommand> {
         let weak = app.as_weak();
 
@@ -378,6 +388,9 @@ mod coin_acceptor {
                         match event {
                             CoinAcceptorEvent::Accepted(value) => {
                                 info!("🪙 Coin accepted in UI: {} AMD", value);
+                                if let Err(e) = db.record_coin(value) {
+                                    error!("Failed to record coin in DB: {}", e);
+                                }
                                 let current = window.get_session_amount();
                                 window.set_session_amount(current + value);
                                 window.set_last_added_amount(value);

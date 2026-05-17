@@ -122,15 +122,12 @@ pub struct CashCode {
 }
 
 impl CashCode {
-    pub fn new(port_path: &str, db_path: &str) -> Result<Self, CashCodeError> {
+    pub fn new(port_path: &str, db: CashCodeDb) -> Result<Self, CashCodeError> {
         info!("opening serial port: {}", port_path);
 
         let port = serialport::new(port_path, 19200)
             .timeout(Duration::from_millis(100))
             .open()?;
-
-        info!("opening database: {}", db_path);
-        let db = CashCodeDb::open(db_path)?;
 
         Ok(CashCode {
             port,
