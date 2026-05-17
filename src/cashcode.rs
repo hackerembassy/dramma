@@ -1,11 +1,11 @@
 use log::{debug, error, info, warn};
-use rusqlite::{Connection, Result as SqlResult};
 use serialport::SerialPort;
 use std::io::{Read, Write};
-use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use thiserror::Error;
+
+use crate::cashcode_db::CashCodeDb;
 
 // protocol constants
 const COMMAND_POLL: &[u8] = &[0x02, 0x03, 0x06, 0x33, 0xDA, 0x81];
@@ -97,7 +97,7 @@ impl BillNominal {
         }
     }
 
-    fn value(&self) -> i32 {
+    pub fn value(&self) -> i32 {
         *self as i32
     }
 }
@@ -118,7 +118,7 @@ pub enum BillEvent {
 pub struct CashCode {
     port: Box<dyn SerialPort>,
     stacker_removed: bool,
-    db: Arc<Mutex<Connection>>,
+    db: CashCodeDb,
 }
 
 impl CashCode {
@@ -130,36 +130,13 @@ impl CashCode {
             .open()?;
 
         info!("opening database: {}", db_path);
-        let db = Connection::open(db_path)?;
-
-        // initialize database
-        Self::init_database(&db)?;
+        let db = CashCodeDb::open(db_path)?;
 
         Ok(CashCode {
             port,
             stacker_removed: false,
-            db: Arc::new(Mutex::new(db)),
+            db,
         })
-    }
-
-    fn init_database(db: &Connection) -> SqlResult<()> {
-        db.execute(
-            "CREATE TABLE IF NOT EXISTS accepted_bills (
-                nominal INTEGER PRIMARY KEY,
-                quantity INTEGER NOT NULL
-            )",
-            [],
-        )?;
-
-        let nominals = [1000, 2000, 5000, 10000, 20000];
-        for nominal in nominals {
-            db.execute(
-                "INSERT OR IGNORE INTO accepted_bills (nominal, quantity) VALUES (?1, 0)",
-                [nominal],
-            )?;
-        }
-
-        Ok(())
     }
 
     fn send_command(&mut self, command: &[u8]) -> Result<(), CashCodeError> {
@@ -381,7 +358,7 @@ impl CashCode {
 
                 if let Some(nominal) = BillNominal::from_code(nominal_code) {
                     info!("bill accepted: {} dram", nominal.value());
-                    self.record_bill(nominal)?;
+                    self.db.record_bill(nominal)?;
                     Some(BillEvent::Accepted(nominal))
                 } else {
                     warn!("bill accepted with unknown nominal: 0x{:02X}", nominal_code);
@@ -404,41 +381,12 @@ impl CashCode {
         Ok(event)
     }
 
-    fn record_bill(&self, nominal: BillNominal) -> Result<(), CashCodeError> {
-        let db = self.db.lock().unwrap();
-        db.execute(
-            "UPDATE accepted_bills SET quantity = quantity + 1 WHERE nominal = ?1",
-            [nominal.value()],
-        )?;
-        Ok(())
-    }
-
     #[allow(dead_code)]
     pub fn get_bill_counts(&self) -> Result<Vec<(i32, i32)>, CashCodeError> {
-        let db = self.db.lock().unwrap();
-        let mut stmt =
-            db.prepare("SELECT nominal, quantity FROM accepted_bills ORDER BY nominal")?;
-
-        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
-
-        let mut results = Vec::new();
-        for row in rows {
-            results.push(row?);
-        }
-
-        Ok(results)
+        self.db.get_bill_counts()
     }
 
     pub fn get_total_amount(&self) -> Result<i32, CashCodeError> {
-        let db = self.db.lock().unwrap();
-        let total: i32 = db
-            .query_row(
-                "SELECT SUM(nominal * quantity) FROM accepted_bills",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap_or(0);
-
-        Ok(total)
+        self.db.get_total_amount()
     }
 }

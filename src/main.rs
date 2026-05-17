@@ -4,6 +4,7 @@
 slint::include_modules!();
 
 mod cashcode;
+mod cashcode_db;
 mod cctalk;
 mod config;
 mod diag_logger;
