@@ -23,17 +23,21 @@ pub fn init() {
         let (tx, rx) = mpsc::sync_channel::<SoundEvent>(8);
 
         thread::spawn(move || {
-            let handle = match DeviceSinkBuilder::open_default_sink() {
-                Ok(h) => h,
-                Err(e) => {
-                    log::error!("Failed to open audio output: {}", e);
-                    return;
-                }
-            };
-
-            let mixer = handle.mixer();
+            let mut sink = None;
 
             while let Ok(event) = rx.recv() {
+                if sink.is_none() {
+                    match DeviceSinkBuilder::open_default_sink() {
+                        Ok(h) => sink = Some(h),
+                        Err(e) => {
+                            log::error!("Failed to open audio output: {}", e);
+                            continue;
+                        }
+                    }
+                }
+
+                let handle = sink.as_ref().unwrap();
+
                 let wav_bytes: &[u8] = match event {
                     SoundEvent::Yippee => YIPPEE_WAV,
                     SoundEvent::TwoMinutesLeft => TWO_MINUTES_LEFT_WAV,
@@ -46,7 +50,7 @@ pub fn init() {
                         continue;
                     }
                 };
-                let player = Player::connect_new(mixer);
+                let player = Player::connect_new(handle.mixer());
                 player.append(source);
                 player.sleep_until_end();
             }

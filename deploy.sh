@@ -45,8 +45,8 @@ LIBS=$(nix-shell --run "ldd ${LOCAL_BINARY}" | grep '=> /' | awk '{print $3}')
 for lib in $LIBS; do
   libname=$(basename $lib)
 
-  # Exclude glibc core libraries to use system versions and avoid conflictsf
-  if [[ "$libname" == libc.so* || "$libname" == libm.so* || "$libname" == libpthread.so* || "$libname" == libdl.so* || "$libname" == librt.so* || "$libname" == ld-linux* ]]; then
+  # Exclude glibc core libraries to use system versions and avoid conflicts
+  if [[ "$libname" == libc.so* || "$libname" == libm.so* || "$libname" == libpthread.so* || "$libname" == libdl.so* || "$libname" == librt.so* || "$libname" == ld-linux* || "$libname" == libasound.so* ]]; then
 
     # Check if it's libstdc++ and force bundle it if ldd found it (though we do explicit check below too)
     # Actually libstdc++ is not glibc, so it won't be caught here.
