@@ -1,3 +1,4 @@
+
 set -e
 # THIS SHIT WAS VIBECODED. FUCK NIXOS, FUCK DEBIAN
 
@@ -7,7 +8,7 @@ DRAMMA_USER="dramma"
 REMOTE_DIR="/home/dramma/dramma-app"
 LOCAL_BINARY="target/release/dramma"
 
-echo "🔨 Building dramma in release mode..."
+echo "Building dramma in release mode..."
 
 # Clean previous build artifact to ensure fresh RPATH
 rm -f target/release/dramma
@@ -16,25 +17,25 @@ rm -f target/release/dramma
 # Note: This creates a binary with Nix dependencies (glibc, etc)
 nix-shell --run "cargo build --release"
 
-echo "📦 Preparing deployment to ${DRAMMA_HOST} (via root SSH)"
+echo "Preparing deployment to ${DRAMMA_HOST} (via root SSH)"
 
 # Stop the service first to release file locks
-echo "🛑 Stopping service..."
+echo "Stopping service..."
 ssh root@${DRAMMA_HOST} "su - ${DRAMMA_USER} -c 'XDG_RUNTIME_DIR=/run/user/\$(id -u ${DRAMMA_USER}) systemctl --user stop dramma.service' || true"
 
 # Create remote directory structure as root, then chown to dramma user
-echo "📁 Creating remote directories..."
+echo "Creating remote directories..."
 ssh root@${DRAMMA_HOST} "mkdir -p ${REMOTE_DIR}/{data,logs,.config} && chown -R ${DRAMMA_USER}:${DRAMMA_USER} ${REMOTE_DIR}"
 
 # Copy binary
-echo "🚀 Preparing binary for deployment..."
+echo "Preparing binary for deployment..."
 
 # Copy required shared libraries for Nix-built binary
-echo "📚 Identifying and copying all required libraries..."
+echo "Identifying and copying all required libraries..."
 ssh root@${DRAMMA_HOST} "mkdir -p ${REMOTE_DIR}/lib"
 
 # Get ALL libraries (Nix and system) using nix-shell to resolve paths correctly
-echo "  Analyzing and patching dependencies..."
+echo "Analyzing and patching dependencies..."
 rm -rf /tmp/dramma-libs
 mkdir -p /tmp/dramma-libs
 
@@ -43,10 +44,10 @@ LIBS=$(nix-shell --run "ldd ${LOCAL_BINARY}" | grep '=> /' | awk '{print $3}')
 
 for lib in $LIBS; do
   libname=$(basename $lib)
-  
+
   # Exclude glibc core libraries to use system versions and avoid conflictsf
   if [[ "$libname" == libc.so* || "$libname" == libm.so* || "$libname" == libpthread.so* || "$libname" == libdl.so* || "$libname" == librt.so* || "$libname" == ld-linux* ]]; then
-    
+
     # Check if it's libstdc++ and force bundle it if ldd found it (though we do explicit check below too)
     # Actually libstdc++ is not glibc, so it won't be caught here.
     echo "  Skipping system library $libname (will use target's version)..."
@@ -54,58 +55,58 @@ for lib in $LIBS; do
   fi
 
   cp $lib /tmp/dramma-libs/$libname
-  echo "  Bundling $libname..."
-  nix-shell -p patchelf --run "patchelf --force-rpath --set-rpath '\$ORIGIN' /tmp/dramma-libs/$libname 2>/dev/null || true" 
+  echo "Bundling $libname..."
+  nix-shell -p patchelf --run "patchelf --force-rpath --set-rpath '\$ORIGIN' /tmp/dramma-libs/$libname 2>/dev/null || true"
 done
 
 # Explicitly find and bundle libstdc++ as ldd often fails to resolve it in nix-shell
 LIBSTDCPP=$(nix-shell --run "gcc --print-file-name=libstdc++.so.6")
 if [ -f "$LIBSTDCPP" ]; then
-    echo "  Force bundling libstdc++ from $LIBSTDCPP..."
+    echo "Force bundling libstdc++ from $LIBSTDCPP..."
     cp "$LIBSTDCPP" /tmp/dramma-libs/libstdc++.so.6
     nix-shell -p patchelf --run "patchelf --force-rpath --set-rpath '\$ORIGIN' /tmp/dramma-libs/libstdc++.so.6 2>/dev/null || true"
 fi
 
 # Copy all patched libraries to target
-echo "  Copying patched libraries to target..."
+echo "Copying patched libraries to target..."
 # Remove old libs first to ensure clean state
 ssh root@${DRAMMA_HOST} "rm -rf ${REMOTE_DIR}/lib/*"
 scp /tmp/dramma-libs/* root@${DRAMMA_HOST}:${REMOTE_DIR}/lib/
 
 # Patch the binary to use the SYSTEM interpreter and include bundled libs in RPATH
-echo "🔧 Patching binary for portable deployment (using system interpreter)..."
+echo "Patching binary for portable deployment (using system interpreter)..."
 # We do this patching on the target because locally we might not want to mess up the binary or paths don't match
 # But wait, we need to copy it first.
 
-echo "  Deploying binary..."
+echo "Deploying binary..."
 scp ${LOCAL_BINARY} root@${DRAMMA_HOST}:${REMOTE_DIR}/dramma
 
 ssh root@${DRAMMA_HOST} "chown -R ${DRAMMA_USER}:${DRAMMA_USER} ${REMOTE_DIR}/lib && chmod +x ${REMOTE_DIR}/dramma"
 
 # Ensure patchelf is installed on target for the next step
-echo "  Ensuring patchelf is installed on target..."
+echo "Ensuring patchelf is installed on target..."
 ssh root@${DRAMMA_HOST} "which patchelf >/dev/null || (apt update && apt install -y patchelf)"
 
-echo "  Patching binary on target..."
+echo "Patching binary on target..."
 ssh root@${DRAMMA_HOST} "patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 --force-rpath --set-rpath '/home/dramma/dramma-app/lib:/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu' ${REMOTE_DIR}/dramma"
 
 # Clean up temp directory
 rm -rf /tmp/dramma-libs
 
 # Copy configuration
-echo "⚙️  Copying configuration..."
+echo "Copying configuration..."
 scp .config/dramma.toml root@${DRAMMA_HOST}:${REMOTE_DIR}/.config/
 ssh root@${DRAMMA_HOST} "chown ${DRAMMA_USER}:${DRAMMA_USER} ${REMOTE_DIR}/.config/dramma.toml"
 
 # Copy any existing database (optional)
 if [ -f "data/Stats.db" ]; then
-    echo "💾 Copying database..."
+    echo "Copying database..."
     scp data/Stats.db root@${DRAMMA_HOST}:${REMOTE_DIR}/data/
     ssh root@${DRAMMA_HOST} "chown ${DRAMMA_USER}:${DRAMMA_USER} ${REMOTE_DIR}/data/Stats.db"
 fi
 
 # Create systemd user service on remote machine
-echo "🔧 Setting up systemd service..."
+echo "Setting up systemd service..."
 ssh root@${DRAMMA_HOST} "su - ${DRAMMA_USER} -c 'mkdir -p ~/.config/systemd/user'"
 
 ssh root@${DRAMMA_HOST} "su - ${DRAMMA_USER} -c 'cat > ~/.config/systemd/user/dramma.service'" << 'SERVICEEOF'
@@ -127,7 +128,7 @@ WantedBy=graphical-session.target
 SERVICEEOF
 
 # Reload and enable service (run as dramma user)
-echo "🔄 Enabling lingering and systemd service..."
+echo "nabling lingering and systemd service..."
 # Enable lingering so systemd user services can run without active session
 ssh root@${DRAMMA_HOST} "loginctl enable-linger ${DRAMMA_USER}"
 
@@ -144,7 +145,7 @@ Name=Dramma Kiosk
 Exec=systemctl --user start dramma.service
 X-LXQt-Need-Tray=false
 DESKTOPEOF
-
+ssh root@${DRAMMA_HOST} "su - ${DRAMMA_USER} -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user restart dramma.service'"
 echo ""
 echo "✅ Deployment complete!"
 echo ""

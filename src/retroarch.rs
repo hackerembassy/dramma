@@ -34,11 +34,18 @@ impl RetroArchManager {
             game.name, game.core, game.rom
         );
 
-        let mut cmd = Command::new(&self.retroarch_command);
-        cmd.arg("--fullscreen").arg("--kiosk");
+        let mut parts = self.retroarch_command.split_whitespace();
+        let program = parts.next().unwrap_or("retroarch");
+        let mut cmd = Command::new(program);
+        
+        for arg in parts {
+            cmd.arg(arg);
+        }
+        
+        cmd.arg("--fullscreen");
 
         if !game.core.is_empty() {
-            cmd.arg("-L").arg(&game.core);
+            cmd.arg("--libretro").arg(&game.core);
         }
         if !game.rom.is_empty() {
             cmd.arg(&game.rom);
