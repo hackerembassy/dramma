@@ -2,6 +2,8 @@ use crate::config::GameEntry;
 use log::{error, info};
 use std::process::{Child, Command};
 use std::sync::{Arc, Mutex};
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 
 /// Manages a RetroArch subprocess for the arcade game mode.
 pub struct RetroArchManager {
@@ -20,14 +22,10 @@ impl RetroArchManager {
     /// Launch RetroArch fullscreen in kiosk mode with the given game entry.
     /// If `game` has empty core/rom paths, RetroArch is launched bare (uses its own last-used config).
     pub fn launch(&self, game: &GameEntry) -> Result<(), String> {
-        let mut process_guard = self.process.lock().unwrap();
+        // Ensure any existing session (and all child processes) is closed first
+        self.close();
 
-        // Kill any already-running session
-        if let Some(ref mut child) = *process_guard {
-            info!("🎮 Killing existing RetroArch process before relaunch");
-            let _ = child.kill();
-            let _ = child.wait();
-        }
+        let mut process_guard = self.process.lock().unwrap();
 
         info!(
             "🎮 Launching RetroArch: game=\"{}\" core=\"{}\" rom=\"{}\"",
@@ -37,11 +35,11 @@ impl RetroArchManager {
         let mut parts = self.retroarch_command.split_whitespace();
         let program = parts.next().unwrap_or("retroarch");
         let mut cmd = Command::new(program);
-        
+
         for arg in parts {
             cmd.arg(arg);
         }
-        
+
         cmd.arg("--fullscreen");
 
         if !game.core.is_empty() {
@@ -49,6 +47,11 @@ impl RetroArchManager {
         }
         if !game.rom.is_empty() {
             cmd.arg(&game.rom);
+        }
+
+        #[cfg(unix)]
+        {
+            cmd.process_group(0);
         }
 
         match cmd.spawn() {
@@ -68,19 +71,38 @@ impl RetroArchManager {
         }
     }
 
-    /// Kill the RetroArch process if running.
+    /// Kill the RetroArch process and any child processes if running.
     pub fn close(&self) {
         let mut process_guard = self.process.lock().unwrap();
         if let Some(ref mut child) = *process_guard {
-            info!("🎮 Closing RetroArch process");
-            if let Err(e) = child.kill() {
-                error!("Failed to kill RetroArch: {}", e);
-            } else {
-                let _ = child.wait();
-                info!("🎮 RetroArch process closed");
+            let pid = child.id();
+            info!("🎮 Closing RetroArch process (PID {})", pid);
+
+            #[cfg(unix)]
+            {
+                // Kill process group to ensure child processes (e.g. retroarch spawned via sudo) receive SIGKILL
+                let _ = Command::new("sudo")
+                    .args(["kill", "-9", &format!("-{}", pid)])
+                    .status();
+                let _ = Command::new("kill")
+                    .args(["-9", &format!("-{}", pid)])
+                    .status();
+                let _ = Command::new("sudo")
+                    .args(["kill", "-9", &pid.to_string()])
+                    .status();
             }
+
+            if let Err(e) = child.kill() {
+                error!("Failed to kill RetroArch process handle: {}", e);
+            }
+            let _ = child.wait();
+            info!("🎮 RetroArch process closed");
         }
         *process_guard = None;
+
+        // Fallback cleanup: kill any remaining retroarch processes directly (user and root)
+        let _ = Command::new("pkill").args(["-9", "-f", "retroarch"]).status();
+        let _ = Command::new("sudo").args(["pkill", "-9", "-f", "retroarch"]).status();
     }
 
     /// Returns `true` if RetroArch is currently running.
@@ -95,3 +117,4 @@ impl Drop for RetroArchManager {
         self.close();
     }
 }
+
