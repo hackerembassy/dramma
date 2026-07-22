@@ -50,6 +50,10 @@ export component MainWindow inherits Window {
     in-out property <LogEntry> diag-bill-status: { level: 0, text: "Initializing..." };
     in-out property <LogEntry> diag-coin-status: { level: 0, text: "Initializing..." };
     in-out property <LogEntry> diag-backend-status: { level: 0, text: "Not checked" };
+    // read by Rust to know when to start/stop the camera preview
+    out property <bool> on-diagnostics-page: current-page == Page.Diagnostics;
+    in-out property <image> diag-camera-frame: @image-url("");
+    in-out property <bool> diag-camera-available: false;
     callback diag-reset-bills();
     callback diag-reenumerate-coins();
     callback diag-play-sound();
@@ -225,11 +229,23 @@ export component MainWindow inherits Window {
             bill-status: root.diag-bill-status;
             coin-status: root.diag-coin-status;
             backend-status: root.diag-backend-status;
-            back-clicked => { root.current-page = Page.Main; }
-            reset-bills => { root.diag-reset-bills(); }
-            reenumerate-coins => { root.diag-reenumerate-coins(); }
-            play-sound => { root.diag-play-sound(); }
-            check-backend => { root.diag-check-backend(); }
+            camera-frame: root.diag-camera-frame;
+            camera-available: root.diag-camera-available;
+            back-clicked => {
+                root.current-page = Page.Main;
+            }
+            reset-bills => {
+                root.diag-reset-bills();
+            }
+            reenumerate-coins => {
+                root.diag-reenumerate-coins();
+            }
+            play-sound => {
+                root.diag-play-sound();
+            }
+            check-backend => {
+                root.diag-check-backend();
+            }
         }
 
         // Confetti overlay — rendered on top of all pages

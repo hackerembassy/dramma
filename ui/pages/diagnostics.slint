@@ -17,6 +17,8 @@ export component Diagnostics inherits Rectangle {
     in property <LogEntry> bill-status: { level: 0, text: "Initializing..." };
     in property <LogEntry> coin-status: { level: 0, text: "Initializing..." };
     in property <LogEntry> backend-status: { level: 0, text: "Not checked" };
+    in property <image> camera-frame;
+    in property <bool> camera-available: false;
 
     // Action buttons are locked for a brief moment after the page appears so
     // that the tap gesture that opened diagnostics cannot accidentally trigger them.
@@ -24,7 +26,9 @@ export component Diagnostics inherits Rectangle {
     Timer {
         interval: 500ms;
         running: root.guard;
-        triggered => { root.guard = false; }
+        triggered => {
+            root.guard = false;
+        }
     }
 
     // Navigate back after 2 minutes of inactivity.  The component is
@@ -33,12 +37,19 @@ export component Diagnostics inherits Rectangle {
     inactivity-timer := Timer {
         interval: 120s;
         running: true;
-        triggered => { root.back-clicked(); }
+        triggered => {
+            root.back-clicked();
+        }
     }
+
     Timer {
         interval: 1s;
         running: true;
-        triggered => { if root.seconds-left > 0 { root.seconds-left -= 1; } }
+        triggered => {
+            if root.seconds-left > 0 {
+                root.seconds-left -= 1;
+            }
+        }
     }
 
     // Background TouchArea — any tap resets the inactivity timer.
@@ -68,7 +79,9 @@ export component Diagnostics inherits Rectangle {
             Button {
                 text: "← Back (" + root.seconds-left + "s)";
                 width: 130px;
-                clicked => { root.back-clicked(); }
+                clicked => {
+                    root.back-clicked();
+                }
             }
 
             Text {
@@ -82,7 +95,9 @@ export component Diagnostics inherits Rectangle {
             }
 
             // balance spacer so title stays centred
-            Rectangle { width: 130px; }
+            Rectangle {
+                width: 130px;
+            }
         }
 
         // ── Action buttons ────────────────────────────────────────────────
@@ -128,122 +143,157 @@ export component Diagnostics inherits Rectangle {
             }
         }
 
-        // ── Status panel ─────────────────────────────────────────────────
-        Rectangle {
-            border-radius: 8px;
-            border-width: 1px;
-            border-color: Palette.color-scheme == ColorScheme.dark ? #444444 : #cccccc;
-            background: Palette.color-scheme == ColorScheme.dark ? #1c1c1c : #f6f6f6;
+        // ── Status panel + camera preview ────────────────────────────────
+        HorizontalLayout {
+            spacing: 16px;
             height: 118px;
 
-            VerticalLayout {
-                padding: 10px;
-                spacing: 6px;
+            // ── Status panel ─────────────────────────────────────────────
+            Rectangle {
+                horizontal-stretch: 1;
+                border-radius: 8px;
+                border-width: 1px;
+                border-color: Palette.color-scheme == ColorScheme.dark ? #444444 : #cccccc;
+                background: Palette.color-scheme == ColorScheme.dark ? #1c1c1c : #f6f6f6;
 
-                // Bill acceptor row
-                HorizontalLayout {
-                    spacing: 8px;
-                    height: 26px;
-                    Text {
-                        text: "Bill acceptor";
-                        font-size: 13px;
-                        color: Palette.foreground;
-                        opacity: 0.55;
-                        width: 130px;
-                        vertical-alignment: center;
-                    }
-                    // status dot
-                    Rectangle {
-                        width: 10px;
-                        height: 10px;
-                        border-radius: 5px;
-                        y: (parent.height - self.height) / 2;
-                        background: root.bill-status.level == 1 ? #4caf50 :
-                                    root.bill-status.level == 2 ? #ff8c00 :
-                                    root.bill-status.level == 3 ? #f44336 : #808080;
-                    }
-                    Text {
-                        text: root.bill-status.text;
-                        font-size: 13px;
-                        color: Palette.foreground;
-                        vertical-alignment: center;
-                        horizontal-stretch: 1;
-                        overflow: elide;
-                    }
-                }
+                VerticalLayout {
+                    padding: 10px;
+                    spacing: 6px;
 
-                // Coin acceptor row
-                HorizontalLayout {
-                    spacing: 8px;
-                    height: 26px;
-                    Text {
-                        text: "Coin acceptor";
-                        font-size: 13px;
-                        color: Palette.foreground;
-                        opacity: 0.55;
-                        width: 130px;
-                        vertical-alignment: center;
-                    }
-                    Rectangle {
-                        width: 10px;
-                        height: 10px;
-                        border-radius: 5px;
-                        y: (parent.height - self.height) / 2;
-                        background: root.coin-status.level == 1 ? #4caf50 :
-                                    root.coin-status.level == 2 ? #ff8c00 :
-                                    root.coin-status.level == 3 ? #f44336 : #808080;
-                    }
-                    Text {
-                        text: root.coin-status.text;
-                        font-size: 13px;
-                        color: Palette.foreground;
-                        vertical-alignment: center;
-                        horizontal-stretch: 1;
-                        overflow: elide;
-                    }
-                }
-
-                // Backend API row
-                HorizontalLayout {
-                    spacing: 8px;
-                    height: 26px;
-                    Text {
-                        text: "Backend API";
-                        font-size: 13px;
-                        color: Palette.foreground;
-                        opacity: 0.55;
-                        width: 130px;
-                        vertical-alignment: center;
-                    }
-                    Rectangle {
-                        width: 10px;
-                        height: 10px;
-                        border-radius: 5px;
-                        y: (parent.height - self.height) / 2;
-                        background: root.backend-status.level == 1 ? #4caf50 :
-                                    root.backend-status.level == 2 ? #ff8c00 :
-                                    root.backend-status.level == 3 ? #f44336 : #808080;
-                    }
-                    Text {
-                        text: root.backend-status.text;
-                        font-size: 13px;
-                        color: Palette.foreground;
-                        vertical-alignment: center;
-                        horizontal-stretch: 1;
-                        overflow: elide;
-                    }
-                    Button {
-                        text: "Check";
-                        width: 80px;
+                    // Bill acceptor row
+                    HorizontalLayout {
+                        spacing: 8px;
                         height: 26px;
-                        enabled: !root.guard;
-                        clicked => {
-                            inactivity-timer.running = false;
-                            inactivity-timer.running = true;
-                            root.seconds-left = 120;
-                            root.check-backend();
+                        Text {
+                            text: "Bill acceptor";
+                            font-size: 13px;
+                            color: Palette.foreground;
+                            opacity: 0.55;
+                            width: 130px;
+                            vertical-alignment: center;
+                        }
+                        // status dot
+                        Rectangle {
+                            width: 10px;
+                            height: 10px;
+                            border-radius: 5px;
+                            y: (parent.height - self.height) / 2;
+                            background: root.bill-status.level == 1 ? #4caf50 :
+                                        root.bill-status.level == 2 ? #ff8c00 :
+                                        root.bill-status.level == 3 ? #f44336 : #808080;
+                        }
+                        Text {
+                            text: root.bill-status.text;
+                            font-size: 13px;
+                            color: Palette.foreground;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                            overflow: elide;
                         }
                     }
+
+                    // Coin acceptor row
+                    HorizontalLayout {
+                        spacing: 8px;
+                        height: 26px;
+                        Text {
+                            text: "Coin acceptor";
+                            font-size: 13px;
+                            color: Palette.foreground;
+                            opacity: 0.55;
+                            width: 130px;
+                            vertical-alignment: center;
+                        }
+                        Rectangle {
+                            width: 10px;
+                            height: 10px;
+                            border-radius: 5px;
+                            y: (parent.height - self.height) / 2;
+                            background: root.coin-status.level == 1 ? #4caf50 :
+                                        root.coin-status.level == 2 ? #ff8c00 :
+                                        root.coin-status.level == 3 ? #f44336 : #808080;
+                        }
+                        Text {
+                            text: root.coin-status.text;
+                            font-size: 13px;
+                            color: Palette.foreground;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                            overflow: elide;
+                        }
+                    }
+
+                    // Backend API row
+                    HorizontalLayout {
+                        spacing: 8px;
+                        height: 26px;
+                        Text {
+                            text: "Backend API";
+                            font-size: 13px;
+                            color: Palette.foreground;
+                            opacity: 0.55;
+                            width: 130px;
+                            vertical-alignment: center;
+                        }
+                        Rectangle {
+                            width: 10px;
+                            height: 10px;
+                            border-radius: 5px;
+                            y: (parent.height - self.height) / 2;
+                            background: root.backend-status.level == 1 ? #4caf50 :
+                                        root.backend-status.level == 2 ? #ff8c00 :
+                                        root.backend-status.level == 3 ? #f44336 : #808080;
+                        }
+                        Text {
+                            text: root.backend-status.text;
+                            font-size: 13px;
+                            color: Palette.foreground;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                            overflow: elide;
+                        }
+                        Button {
+                            text: "Check";
+                            width: 80px;
+                            height: 26px;
+                            enabled: !root.guard;
+                            clicked => {
+                                inactivity-timer.running = false;
+                                inactivity-timer.running = true;
+                                root.seconds-left = 120;
+                                root.check-backend();
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── Camera preview ───────────────────────────────────────────
+            Rectangle {
+                width: 160px;
+                border-radius: 8px;
+                border-width: 1px;
+                border-color: Palette.color-scheme == ColorScheme.dark ? #444444 : #cccccc;
+                background: black;
+                clip: true;
+
+                Image {
+                    width: 100%;
+                    height: 100%;
+                    source: root.camera-frame;
+                    image-fit: contain;
+                    visible: root.camera-available;
+                }
+
+                if !root.camera-available: Text {
+                    width: 100%;
+                    height: 100%;
+                    text: "No camera feed";
+                    font-size: 12px;
+                    color: #999999;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    wrap: word-wrap;
                 }
             }
         }
@@ -263,11 +313,7 @@ export component Diagnostics inherits Rectangle {
 
             for entry[i] in root.log-lines: Rectangle {
                 height: 22px;
-                background: mod(i, 2) == 0
-                    ? transparent
-                    : Palette.color-scheme == ColorScheme.dark
-                        ? #ffffff08
-                        : #00000008;
+                background: mod(i, 2) == 0 ? transparent : Palette.color-scheme == ColorScheme.dark ? #ffffff08 : #00000008;
 
                 Text {
                     x: 6px;
@@ -277,9 +323,7 @@ export component Diagnostics inherits Rectangle {
                     font-size: 12px;
                     vertical-alignment: center;
                     overflow: elide;
-                    color: entry.level == 3 ? #f44336 :
-                           entry.level == 2 ? #ff8c00 :
-                           Palette.foreground;
+                    color: entry.level == 3 ? #f44336 : entry.level == 2 ? #ff8c00 : Palette.foreground;
                 }
             }
         }

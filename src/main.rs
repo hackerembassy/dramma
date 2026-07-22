@@ -944,6 +944,51 @@ mod diagnostics_handler {
         );
         std::mem::forget(timer);
 
+        // Live camera preview — only streams while the Diagnostics page is open.
+        let (preview_cmd_tx, preview_cmd_rx) = std::sync::mpsc::channel::<camera::PreviewCommand>();
+        let (preview_frame_tx, preview_frame_rx) =
+            std::sync::mpsc::sync_channel::<camera::PreviewFrame>(1);
+        camera::spawn_preview(preview_cmd_rx, preview_frame_tx);
+
+        let weak_preview = app.as_weak();
+        let was_on_diagnostics = Rc::new(RefCell::new(false));
+        let preview_timer = Timer::default();
+        preview_timer.start(
+            TimerMode::Repeated,
+            std::time::Duration::from_millis(100),
+            move || {
+                let Some(window) = weak_preview.upgrade() else {
+                    return;
+                };
+                let on_page = window.get_on_diagnostics_page();
+                if on_page != *was_on_diagnostics.borrow() {
+                    *was_on_diagnostics.borrow_mut() = on_page;
+                    if on_page {
+                        let _ = preview_cmd_tx.send(camera::PreviewCommand::Start);
+                    } else {
+                        let _ = preview_cmd_tx.send(camera::PreviewCommand::Stop);
+                        window.set_diag_camera_available(false);
+                    }
+                }
+                // Drain to the most recent frame only — older ones are stale.
+                let mut latest = None;
+                while let Ok(frame) = preview_frame_rx.try_recv() {
+                    latest = Some(frame);
+                }
+                if let Some(frame) = latest {
+                    let pixel_buffer =
+                        slint::SharedPixelBuffer::<slint::Rgb8Pixel>::clone_from_slice(
+                            &frame.rgb,
+                            frame.width,
+                            frame.height,
+                        );
+                    window.set_diag_camera_frame(slint::Image::from_rgb8(pixel_buffer));
+                    window.set_diag_camera_available(true);
+                }
+            },
+        );
+        std::mem::forget(preview_timer);
+
         let cashcode_tx_reset = cashcode_tx;
         app.on_diag_reset_bills(move || {
             info!("🔄 Diagnostics: resetting bill acceptor");
