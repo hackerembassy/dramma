@@ -836,7 +836,8 @@ dependencies = [
 [[package]]
 name = "cc_talk_core"
 version = "0.0.4"
-source = "git+https://github.com/Kosta-Git/cc-talk-rs#b1fb306c82520a1230bd7251f05dd3e2a92c0694"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c68f424b45f6d36a6e103f51ae47681d72677632890da25511fed2ebf5741f71"
 dependencies = [
  "heapless",
  "thiserror 2.0.18",
@@ -845,7 +846,8 @@ dependencies = [
 [[package]]
 name = "cc_talk_host"
 version = "0.0.5"
-source = "git+https://github.com/Kosta-Git/cc-talk-rs#b1fb306c82520a1230bd7251f05dd3e2a92c0694"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9afbac7e232c6f10a81e3d8951edfe5ff181404298e6f709f981cdab7fbce8c3"
 dependencies = [
  "cc_talk_core",
  "heapless",
@@ -856,7 +858,8 @@ dependencies = [
 [[package]]
 name = "cc_talk_tokio_host"
 version = "0.1.1"
-source = "git+https://github.com/Kosta-Git/cc-talk-rs#b1fb306c82520a1230bd7251f05dd3e2a92c0694"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f31e684233f1c87e2b082b8889b7d122b6fbec888fb71eb2b6ec0453f585ed9"
 dependencies = [
  "cc_talk_core",
  "cc_talk_host",
