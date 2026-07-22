@@ -148,6 +148,7 @@ jobs:
         run: |
           ssh root@${{ env.DRAMMA_HOST }} "cat > ${{ env.REMOTE_DIR }}/.config/dramma.toml" << 'EOF'
           token = "${{ secrets.DRAMMA_TOKEN }}"
+          diagnostics_password = "${{ secrets.DIAGNOSTICS_PASSWORD }}"
           cashcode_serial_port = "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0"
           cctalk_serial_port = "/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0"
 
