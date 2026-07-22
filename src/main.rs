@@ -9,6 +9,7 @@ mod cctalk;
 mod config;
 mod diag_logger;
 mod donation;
+mod donation_log;
 mod error;
 mod funds;
 mod home_assistant;
@@ -69,6 +70,7 @@ pub fn main() {
     donation_handler::init(&main_window, &config, cashcode_tx, cctalk_tx);
     home_assistant_handler::init(&main_window, &config);
     game_handler::init(&main_window, &config);
+    logs_handler::init(&main_window, &config);
 
     main_window.run().unwrap();
 }
@@ -599,6 +601,7 @@ mod donation_handler {
         cashcode_tx: Sender<bill_acceptor::CashCodeCommand>,
         token: Option<String>,
         photos_dir: String,
+        stats_db_path: String,
     ) -> slint::Timer {
         let timer = slint::Timer::default();
         timer.start(
@@ -638,8 +641,10 @@ mod donation_handler {
                         if let Some(ref tok) = token {
                             let username = window.get_session_username().to_string();
                             let fund_id = window.get_session_fund_id();
+                            let fund_name = window.get_session_fund_name().to_string();
                             let tok = tok.clone();
                             let photos_dir = photos_dir.clone();
+                            let stats_db_path = stats_db_path.clone();
                             slint::spawn_local(async move {
                                 match donation::send_donation(&tok, fund_id, &username, amount)
                                     .await
@@ -647,9 +652,21 @@ mod donation_handler {
                                     Ok(_) => {
                                         sound::play_yippee();
                                         info!("✅ Auto-approved donation sent successfully!");
+                                        let timestamp = donation_log::now_timestamp();
                                         if username != "anon" {
-                                            camera::capture_donation_photo(&photos_dir, &username);
+                                            camera::capture_donation_photo(
+                                                &photos_dir,
+                                                &username,
+                                                timestamp,
+                                            );
                                         }
+                                        donation_log::record(
+                                            &stats_db_path,
+                                            timestamp,
+                                            &username,
+                                            amount,
+                                            &fund_name,
+                                        );
                                     }
                                     Err(e) => {
                                         error!("❌ Auto-approve: failed to send donation: {}", e)
@@ -687,6 +704,8 @@ mod donation_handler {
             let cctalk_tx = cctalk_tx.clone();
             let token = config.token.clone();
             let photos_dir = config.photos_dir.clone();
+            let stats_db_path = config.stats_db_path.clone();
+            let weak = app.as_weak();
             move |username, fund_id, amount| {
                 info!(
                     "💰 Processing donation: {} AMD from {} to fund {}",
@@ -711,15 +730,32 @@ mod donation_handler {
                     let token = token.clone();
                     let username_str = username.to_string();
                     let photos_dir = photos_dir.clone();
+                    let stats_db_path = stats_db_path.clone();
+                    let fund_name = weak
+                        .upgrade()
+                        .map(|w| w.get_session_fund_name().to_string())
+                        .unwrap_or_default();
                     slint::spawn_local(async move {
                         match donation::send_donation(&token, fund_id, &username_str, amount).await
                         {
                             Ok(_) => {
                                 sound::play_yippee();
                                 info!("✅ Donation sent successfully!");
+                                let timestamp = donation_log::now_timestamp();
                                 if username_str != "anon" {
-                                    camera::capture_donation_photo(&photos_dir, &username_str);
+                                    camera::capture_donation_photo(
+                                        &photos_dir,
+                                        &username_str,
+                                        timestamp,
+                                    );
                                 }
+                                donation_log::record(
+                                    &stats_db_path,
+                                    timestamp,
+                                    &username_str,
+                                    amount,
+                                    &fund_name,
+                                );
                             }
                             Err(e) => error!("❌ Failed to send donation: {}", e),
                         }
@@ -736,6 +772,7 @@ mod donation_handler {
         let cashcode_tx_enter = cashcode_tx.clone();
         let token_enter = config.token.clone();
         let photos_dir_enter = config.photos_dir.clone();
+        let stats_db_path_enter = config.stats_db_path.clone();
         let timer_enter = inactivity_timer.clone();
         let ticker_enter = countdown_ticker.clone();
         app.on_enter_insert_money(move || {
@@ -753,6 +790,7 @@ mod donation_handler {
                 cashcode_tx_enter.clone(),
                 token_enter.clone(),
                 photos_dir_enter.clone(),
+                stats_db_path_enter.clone(),
             );
             *timer_enter.borrow_mut() = Some(timer);
             // Countdown ticker (1-second decrement)
@@ -778,6 +816,7 @@ mod donation_handler {
         let cashcode_tx_activity = cashcode_tx.clone();
         let token_activity = config.token.clone();
         let photos_dir_activity = config.photos_dir.clone();
+        let stats_db_path_activity = config.stats_db_path.clone();
         let timer_activity = inactivity_timer.clone();
         let ticker_activity = countdown_ticker.clone();
         app.on_activity_on_insert_money(move || {
@@ -792,6 +831,7 @@ mod donation_handler {
                 cashcode_tx_activity.clone(),
                 token_activity.clone(),
                 photos_dir_activity.clone(),
+                stats_db_path_activity.clone(),
             );
             *timer_activity.borrow_mut() = Some(timer);
             // Replace countdown ticker
@@ -863,6 +903,82 @@ mod donation_handler {
                     }
                 });
             }
+        });
+    }
+}
+
+mod logs_handler {
+    use super::*;
+    use slint::{Image, ModelRc, VecModel};
+
+    /// How many past donations to show on the wall. Each entry with a photo
+    /// loads that photo into memory at full resolution, so this is kept modest.
+    const LOG_LIMIT: i64 = 24;
+
+    fn format_relative_time(timestamp: u64) -> String {
+        let diff = donation_log::now_timestamp().saturating_sub(timestamp);
+        if diff < 60 {
+            "just now".to_string()
+        } else if diff < 3600 {
+            format!("{}m ago", diff / 60)
+        } else if diff < 86400 {
+            format!("{}h ago", diff / 3600)
+        } else {
+            format!("{}d ago", diff / 86400)
+        }
+    }
+
+    pub fn init(app: &MainWindow, config: &Config) {
+        let stats_db_path = config.stats_db_path.clone();
+        let photos_dir = config.photos_dir.clone();
+        let weak = app.as_weak();
+
+        app.on_fetch_logs(move || {
+            let stats_db_path = stats_db_path.clone();
+            let photos_dir = photos_dir.clone();
+            let weak = weak.clone();
+
+            thread::spawn(move || {
+                // The DB read is the slow part, so it happens off the UI thread.
+                // `slint::Image` isn't `Send`, though, so it can't be built here —
+                // loading each photo has to happen after we hop back to the UI thread.
+                let entries = match donation_log::fetch_recent(&stats_db_path, LOG_LIMIT) {
+                    Ok(entries) => entries,
+                    Err(e) => {
+                        error!("Failed to fetch donation log: {}", e);
+                        Vec::new()
+                    }
+                };
+
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(window) = weak.upgrade() else {
+                        return;
+                    };
+                    let items: Vec<DonationLogItem> = entries
+                        .into_iter()
+                        .map(|entry| {
+                            let is_anon = entry.username == "anon";
+                            let photo = if is_anon {
+                                None
+                            } else {
+                                let path = std::path::Path::new(&photos_dir)
+                                    .join(camera::photo_filename(entry.timestamp, &entry.username));
+                                Image::load_from_path(&path).ok()
+                            };
+                            DonationLogItem {
+                                username: entry.username.into(),
+                                amount: entry.amount,
+                                fund_name: entry.fund_name.into(),
+                                when: format_relative_time(entry.timestamp).into(),
+                                is_anon,
+                                has_photo: photo.is_some(),
+                                photo: photo.unwrap_or_default(),
+                            }
+                        })
+                        .collect();
+                    window.set_donation_logs(ModelRc::new(VecModel::from(items)));
+                });
+            });
         });
     }
 }

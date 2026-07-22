@@ -7,16 +7,36 @@ use nokhwa::utils::{
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, SyncSender, TryRecvError};
 use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
+
+/// Deterministic filename for a donation photo. Shared with `donation_log` so
+/// a logged donation (timestamp, username) can be re-associated with the
+/// photo file that `capture_donation_photo` saved for it, without needing to
+/// store the path separately.
+pub fn photo_filename(timestamp: u64, username: &str) -> String {
+    let safe_username: String = username
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    format!("{timestamp}_{safe_username}.jpg")
+}
 
 /// Captures a single frame from the default webcam and saves it as a JPEG
 /// under `photos_dir`, running on a dedicated thread so it never blocks the UI.
-pub fn capture_donation_photo(photos_dir: &str, username: &str) {
+/// `timestamp` is supplied by the caller (rather than generated here) so it
+/// can match the timestamp recorded in the donation log.
+pub fn capture_donation_photo(photos_dir: &str, username: &str, timestamp: u64) {
     let photos_dir = photos_dir.to_string();
     let username = username.to_string();
 
     thread::spawn(move || {
-        if let Err(e) = capture_and_save(&photos_dir, &username) {
+        if let Err(e) = capture_and_save(&photos_dir, &username, timestamp) {
             error!("📷 Failed to take donation photo: {}", e);
         }
     });
@@ -56,7 +76,7 @@ fn open_preview_camera() -> Result<Camera, String> {
     open_camera()
 }
 
-fn capture_and_save(photos_dir: &str, username: &str) -> Result<(), String> {
+fn capture_and_save(photos_dir: &str, username: &str, timestamp: u64) -> Result<(), String> {
     let mut camera = open_camera()?;
 
     // Discard the first couple of frames to let auto-exposure/white-balance settle.
@@ -74,21 +94,7 @@ fn capture_and_save(photos_dir: &str, username: &str) -> Result<(), String> {
     std::fs::create_dir_all(photos_dir)
         .map_err(|e| format!("failed to create photos directory {photos_dir}: {e}"))?;
 
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let safe_username: String = username
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let path = PathBuf::from(photos_dir).join(format!("{timestamp}_{safe_username}.jpg"));
+    let path = PathBuf::from(photos_dir).join(photo_filename(timestamp, username));
 
     image
         .save(&path)

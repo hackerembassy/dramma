@@ -8,6 +8,7 @@ import { InsertMoney } from "pages/insert_money.slint";
 import { InsertCoins } from "pages/insert_coins.slint";
 import { HomeAssistant } from "pages/home_assistant.slint";
 import { Diagnostics, LogEntry } from "pages/diagnostics.slint";
+import { Logs, DonationLogItem } from "pages/logs.slint";
 
 export { VirtualKeyboardHandler, KeyModel, AutocompleteHandler }
 
@@ -18,6 +19,7 @@ enum Page {
     InsertCoins,
     HomeAssistant,
     Diagnostics,
+    Logs,
     Top,
     Games
 }
@@ -58,6 +60,10 @@ export component MainWindow inherits Window {
     callback diag-reenumerate-coins();
     callback diag-play-sound();
     callback diag-check-backend();
+
+    // donation wall
+    in-out property <[DonationLogItem]> donation-logs: [];
+    callback fetch-logs();
 
     // callbacks for rust to hook into
     callback done-clicked(string, int, int);  // username, fund_id, amount
@@ -123,6 +129,10 @@ export component MainWindow inherits Window {
                 root.session-amount = 0;
                 root.start-accepting-money();
                 root.current-page = Page.InsertCoins;
+            }
+
+            logs-clicked => {
+                root.current-page = Page.Logs;
             }
 
             secret-tapped => {
@@ -245,6 +255,15 @@ export component MainWindow inherits Window {
             }
             check-backend => {
                 root.diag-check-backend();
+            }
+        }
+        if current-page == Page.Logs: Logs {
+            entries: root.donation-logs;
+            fetch-logs => {
+                root.fetch-logs();
+            }
+            back-clicked => {
+                root.current-page = Page.Main;
             }
         }
 

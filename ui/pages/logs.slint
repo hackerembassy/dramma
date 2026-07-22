@@ -1,0 +1,162 @@
+import { Button, Palette, ListView } from "std-widgets.slint";
+import { Icons } from "../icons.slint";
+
+export struct DonationLogItem {
+    username: string,
+    amount: int,
+    fund-name: string,
+    when: string,
+    is-anon: bool,
+    has-photo: bool,
+    photo: image,
+}
+
+export component Logs inherits Rectangle {
+    callback back-clicked();
+    callback fetch-logs();
+    in property <[DonationLogItem]> entries: [];
+
+    property <int> expanded-index: -1;
+    changed entries => {
+        root.expanded-index = -1;
+    }
+
+    init => {
+        root.fetch-logs();
+    }
+
+    background: Palette.background;
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+
+        // ── Header ────────────────────────────────────────────────────────
+        HorizontalLayout {
+            alignment: space-between;
+            spacing: 16px;
+            height: 56px;
+
+            Button {
+                text: "← Back";
+                width: 130px;
+                clicked => {
+                    root.back-clicked();
+                }
+            }
+
+            Text {
+                text: "Donation Wall";
+                font-size: 28px;
+                font-weight: 700;
+                color: Palette.foreground;
+                vertical-alignment: center;
+                horizontal-alignment: center;
+                horizontal-stretch: 1;
+            }
+
+            Rectangle {
+                width: 130px;
+            }
+        }
+
+        if entries.length == 0: Text {
+            text: "No donations yet — be the first!";
+            font-size: 16px;
+            color: Palette.foreground;
+            opacity: 0.5;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            vertical-stretch: 1;
+        }
+
+        // ── Donation list ─────────────────────────────────────────────────
+        if entries.length > 0: ListView {
+            vertical-stretch: 1;
+
+            for item[i] in entries: Rectangle {
+                height: 96px;
+                background: mod(i, 2) == 0 ? transparent : Palette.color-scheme == ColorScheme.dark ? #ffffff08 : #00000008;
+
+                HorizontalLayout {
+                    padding: 8px;
+                    spacing: 12px;
+
+                    // thumbnail — tap to reveal/hide the full-resolution picture
+                    Rectangle {
+                        width: 80px;
+                        height: 80px;
+                        border-radius: 8px;
+                        clip: true;
+                        background: item.is-anon || !item.has-photo ? #2a2a2a : black;
+
+                        Image {
+                            width: item.is-anon || !item.has-photo ? 60% : 100%;
+                            height: item.is-anon || !item.has-photo ? 60% : 100%;
+                            x: item.is-anon || !item.has-photo ? parent.width * 0.2 : 0px;
+                            y: item.is-anon || !item.has-photo ? parent.height * 0.2 : 0px;
+                            image-fit: item.is-anon || !item.has-photo ? contain : cover;
+                            source: item.is-anon || !item.has-photo ? Icons.guy-fawkes : item.photo;
+                            colorize: item.is-anon || !item.has-photo ? white : transparent;
+                        }
+
+                        TouchArea {
+                            clicked => {
+                                root.expanded-index = root.expanded-index == i ? -1 : i;
+                            }
+                        }
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 4px;
+
+                        Text {
+                            text: item.is-anon ? "Anonymous donor" : "@" + item.username;
+                            font-size: 18px;
+                            font-weight: 700;
+                            color: Palette.foreground;
+                            overflow: elide;
+                        }
+
+                        Text {
+                            text: item.amount + " AMD to " + item.fund-name;
+                            font-size: 13px;
+                            color: Palette.foreground;
+                            opacity: 0.6;
+                            overflow: elide;
+                        }
+
+                        Text {
+                            text: item.when;
+                            font-size: 11px;
+                            color: Palette.foreground;
+                            opacity: 0.45;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Fullscreen overlay for the tapped photo ─────────────────────────────
+    if root.expanded-index >= 0 && root.expanded-index < entries.length: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #000000dd;
+
+        TouchArea {
+            clicked => {
+                root.expanded-index = -1;
+            }
+        }
+
+        Image {
+            width: 85%;
+            height: 85%;
+            image-fit: contain;
+            source: entries[root.expanded-index].is-anon || !entries[root.expanded-index].has-photo ? Icons.guy-fawkes : entries[root.expanded-index].photo;
+            colorize: entries[root.expanded-index].is-anon || !entries[root.expanded-index].has-photo ? white : transparent;
+        }
+    }
+}
