@@ -1,0 +1,97 @@
+import { Button, LineEdit, Palette } from "std-widgets.slint";
+import { VirtualKeyboardHandler, VirtualKeyboard } from "../virtual_keyboard.slint";
+
+export component DiagnosticsAuth inherits Rectangle {
+    callback back-clicked();
+    callback unlocked();
+    in property <string> expected-password: "";
+
+    property <bool> wrong: false;
+
+    init => {
+        VirtualKeyboardHandler.open = true;
+        password-input.focus();
+    }
+
+    function try-unlock() {
+        if password-input.text == root.expected-password {
+            VirtualKeyboardHandler.open = false;
+            root.wrong = false;
+            password-input.text = "";
+            root.unlocked();
+        } else {
+            root.wrong = true;
+            password-input.text = "";
+        }
+    }
+
+    background: Palette.background;
+
+    VerticalLayout {
+        alignment: center;
+        spacing: 20px;
+        padding: 32px;
+
+        Text {
+            text: "🔒 Diagnostics";
+            font-size: 28px;
+            font-weight: 700;
+            color: Palette.foreground;
+            horizontal-alignment: center;
+        }
+
+        Text {
+            text: root.wrong ? "Wrong password, try again" : "Enter password to continue";
+            font-size: 16px;
+            color: root.wrong ? #e53935 : Palette.foreground;
+            opacity: root.wrong ? 1.0 : 0.6;
+            horizontal-alignment: center;
+        }
+
+        HorizontalLayout {
+            alignment: center;
+
+            password-input := LineEdit {
+                width: 320px;
+                height: 60px;
+                font-size: 22px;
+                input-type: password;
+                horizontal-alignment: center;
+                accepted => {
+                    root.try-unlock();
+                }
+            }
+        }
+
+        HorizontalLayout {
+            alignment: center;
+            spacing: 16px;
+
+            Button {
+                text: "← Back";
+                width: 140px;
+                height: 56px;
+                clicked => {
+                    VirtualKeyboardHandler.open = false;
+                    password-input.text = "";
+                    root.wrong = false;
+                    root.back-clicked();
+                }
+            }
+
+            Button {
+                text: "Unlock";
+                primary: true;
+                width: 140px;
+                height: 56px;
+                clicked => {
+                    root.try-unlock();
+                }
+            }
+        }
+    }
+
+    keyboard := VirtualKeyboard {
+        y: VirtualKeyboardHandler.open ? parent.height - self.height : parent.height;
+    }
+}

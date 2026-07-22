@@ -27,6 +27,7 @@ pub struct GameEntry {
 #[serde(default)]
 pub struct Config {
     pub token: Option<String>,
+    pub diagnostics_password: Option<String>,
     pub home_assistant_url: String,
     pub hass_api_port: u16,
     pub cashcode_serial_port: String,
@@ -42,6 +43,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             token: None,
+            diagnostics_password: None,
             home_assistant_url: "https://ha.hackem.cc/web-dramma/0?BrowserID=dramma".to_string(),
             hass_api_port: 8321,
             cashcode_serial_port:

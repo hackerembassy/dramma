@@ -11,7 +11,6 @@ global Theme {
     out property <color> text-primary:  #f0eeff;
     out property <color> text-muted:    #8888bb;
     out property <color> github-accent: #c9b8ff;
-    out property <color> accent-logs:   #e0c05a;
 }
 
 // ─── Feature card ─────────────────────────────────────────────────────────────
@@ -102,7 +101,6 @@ export component Main inherits Rectangle {
     callback donate-clicked();
     callback home-assistant-clicked();
     callback play-clicked();
-    callback logs-clicked();
     callback secret-tapped();
 
     property <int> tap-count: 0;
@@ -200,10 +198,9 @@ export component Main inherits Rectangle {
         // ── Feature cards ───────────────────────────────────────────────────
         HorizontalLayout {
             alignment: center;
-            spacing: 20px;
+            spacing: 24px;
 
             FeatureCard {
-                width: 268px;
                 accent: Theme.accent-donate;
                 icon: "💸";
                 label: "Donate";
@@ -214,7 +211,6 @@ export component Main inherits Rectangle {
             }
 
             FeatureCard {
-                width: 268px;
                 accent: Theme.accent-hass;
                 icon: "🏠";
                 label: "Control Space";
@@ -225,24 +221,12 @@ export component Main inherits Rectangle {
             }
 
             FeatureCard {
-                width: 268px;
                 accent: Theme.accent-play;
                 icon: "🎮";
                 label: "Play Games";
                 description: "Insert coins and enjoy\nretro games on the machine!";
                 clicked => {
                     root.play-clicked();
-                }
-            }
-
-            FeatureCard {
-                width: 268px;
-                accent: Theme.accent-logs;
-                icon: "🖼️";
-                label: "Donation Wall";
-                description: "See recent donors\nand their pictures!";
-                clicked => {
-                    root.logs-clicked();
                 }
             }
         }

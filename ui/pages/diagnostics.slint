@@ -12,6 +12,7 @@ export component Diagnostics inherits Rectangle {
     callback reenumerate-coins();
     callback play-sound();
     callback check-backend();
+    callback open-logs();
 
     in-out property <[LogEntry]> log-lines: [];
     in property <LogEntry> bill-status: { level: 0, text: "Initializing..." };
@@ -141,6 +142,18 @@ export component Diagnostics inherits Rectangle {
                     root.play-sound();
                 }
             }
+
+            Button {
+                text: "Donation Wall";
+                width: 200px;
+                enabled: !root.guard;
+                clicked => {
+                    inactivity-timer.running = false;
+                    inactivity-timer.running = true;
+                    root.seconds-left = 120;
+                    root.open-logs();
+                }
+            }
         }
 
         // ── Status panel + camera preview ────────────────────────────────
@@ -178,10 +191,9 @@ export component Diagnostics inherits Rectangle {
                             height: 10px;
                             border-radius: 5px;
                             y: (parent.height - self.height) / 2;
-                            background: root.bill-status.level == 1 ? #4caf50 :
-                                        root.bill-status.level == 2 ? #ff8c00 :
-                                        root.bill-status.level == 3 ? #f44336 : #808080;
+                            background: root.bill-status.level == 1 ? #4caf50 : root.bill-status.level == 2 ? #ff8c00 : root.bill-status.level == 3 ? #f44336 : #808080;
                         }
+
                         Text {
                             text: root.bill-status.text;
                             font-size: 13px;
@@ -204,15 +216,15 @@ export component Diagnostics inherits Rectangle {
                             width: 130px;
                             vertical-alignment: center;
                         }
+
                         Rectangle {
                             width: 10px;
                             height: 10px;
                             border-radius: 5px;
                             y: (parent.height - self.height) / 2;
-                            background: root.coin-status.level == 1 ? #4caf50 :
-                                        root.coin-status.level == 2 ? #ff8c00 :
-                                        root.coin-status.level == 3 ? #f44336 : #808080;
+                            background: root.coin-status.level == 1 ? #4caf50 : root.coin-status.level == 2 ? #ff8c00 : root.coin-status.level == 3 ? #f44336 : #808080;
                         }
+
                         Text {
                             text: root.coin-status.text;
                             font-size: 13px;
@@ -235,15 +247,15 @@ export component Diagnostics inherits Rectangle {
                             width: 130px;
                             vertical-alignment: center;
                         }
+
                         Rectangle {
                             width: 10px;
                             height: 10px;
                             border-radius: 5px;
                             y: (parent.height - self.height) / 2;
-                            background: root.backend-status.level == 1 ? #4caf50 :
-                                        root.backend-status.level == 2 ? #ff8c00 :
-                                        root.backend-status.level == 3 ? #f44336 : #808080;
+                            background: root.backend-status.level == 1 ? #4caf50 : root.backend-status.level == 2 ? #ff8c00 : root.backend-status.level == 3 ? #f44336 : #808080;
                         }
+
                         Text {
                             text: root.backend-status.text;
                             font-size: 13px;
@@ -252,6 +264,7 @@ export component Diagnostics inherits Rectangle {
                             horizontal-stretch: 1;
                             overflow: elide;
                         }
+
                         Button {
                             text: "Check";
                             width: 80px;

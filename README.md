@@ -12,7 +12,7 @@ nix-shell
 cargo run
 ```
 
-The app starts fullscreen. Tap the logo **5 times** to open the diagnostics panel.
+The app starts fullscreen. Tap the logo **5 times** to open the diagnostics panel (password-protected if `diagnostics_password` is set — see below).
 
 ---
 
@@ -22,6 +22,7 @@ Create `.config/dramma.toml` next to the binary (or in the working directory you
 
 ```toml
 token = "your-bearer-token" # For Bot donates
+diagnostics_password = "your-password" # Optional — gates the diagnostics panel (and donation wall) if set
 
 # Optional overrides (these are the defaults):
 home_assistant_url    = "https://ha.hackem.cc/web-dramma/0?BrowserID=dramma"

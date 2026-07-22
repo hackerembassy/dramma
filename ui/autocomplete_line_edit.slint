@@ -66,9 +66,20 @@ export component AutocompleteLineEdit inherits Rectangle {
         }
     }
 
+    // Recompute the suggestion for whatever text is already in the field —
+    // otherwise re-focusing a field left with partial text shows no
+    // suggestion until the user types another character.
+    function refresh-suggestion() {
+        root.current-suggestion = AutocompleteHandler.find-suggestion(root.text, root.suggestions);
+        root.is-valid = AutocompleteHandler.is-valid-input(root.text, root.suggestions);
+    }
+
     // Reset cursor visibility when focus changes
     changed has-focus => {
         root.cursor-visible = true;
+        if (root.has-focus) {
+            root.refresh-suggestion();
+        }
         AutocompleteHandler.return-key-active = root.has-focus && root.current-suggestion != "";
     }
     // React to autocomplete trigger from virtual keyboard
@@ -154,8 +165,7 @@ export component AutocompleteLineEdit inherits Rectangle {
         text <=> root.text;
 
         edited(value) => {
-            root.current-suggestion = AutocompleteHandler.find-suggestion(value, root.suggestions);
-            root.is-valid = AutocompleteHandler.is-valid-input(value, root.suggestions);
+            root.refresh-suggestion();
             root.edited(value);
         }
 

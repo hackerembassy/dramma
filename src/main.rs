@@ -55,6 +55,14 @@ pub fn main() {
     // Enable fullscreen mode for kiosk deployment
     main_window.window().set_fullscreen(true);
 
+    main_window.set_diagnostics_password(
+        config
+            .diagnostics_password
+            .clone()
+            .unwrap_or_default()
+            .into(),
+    );
+
     virtual_keyboard::init(&main_window);
     autocomplete_handler::init(&main_window);
     let cashcode_tx = bill_acceptor::init(&main_window, &config);
