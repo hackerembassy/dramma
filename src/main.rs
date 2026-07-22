@@ -471,11 +471,13 @@ mod autocomplete_handler {
 
         app.global::<AutocompleteHandler>()
             .on_get_suggestion_suffix(|typed, suggestion| {
-                if suggestion.is_empty() || typed.is_empty() {
+                if suggestion.is_empty() {
                     return slint::SharedString::default();
                 }
 
-                // Get the suffix after the typed text
+                // Get the suffix after the typed text (if nothing's typed
+                // yet — e.g. a tap-triggered suggestion — this is the whole
+                // suggestion)
                 let typed_len = typed.chars().count();
                 let suffix: String = suggestion.chars().skip(typed_len).collect();
                 slint::SharedString::from(suffix)

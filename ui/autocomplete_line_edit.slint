@@ -78,7 +78,20 @@ export component AutocompleteLineEdit inherits Rectangle {
     changed has-focus => {
         root.cursor-visible = true;
         if (root.has-focus) {
-            root.refresh-suggestion();
+            if (root.text == "" && root.suggestions.length > 0) {
+                // find-suggestion() intentionally returns nothing for empty
+                // input — that guard is for the typed-and-backspaced-to-empty
+                // case, so it doesn't yank the cursor around mid-edit. A tap
+                // on a still-untouched field should still offer a starting
+                // point, so this bypasses it just for the focus-gained case.
+                root.current-suggestion = root.suggestions[0];
+            } else {
+                root.refresh-suggestion();
+            }
+            // Applying the suggestion itself happens in the TouchArea below,
+            // not here — this also fires for programmatic focus (e.g.
+            // set-input-focus() on page load), which shouldn't auto-fill
+            // text before the user has actually tapped anything.
         }
         AutocompleteHandler.return-key-active = root.has-focus && root.current-suggestion != "";
     }
@@ -101,6 +114,7 @@ export component AutocompleteLineEdit inherits Rectangle {
     TouchArea {
         clicked => {
             inner-input.focus();
+            root.apply-autocomplete();
         }
     }
 
