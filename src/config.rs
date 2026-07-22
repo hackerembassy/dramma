@@ -33,6 +33,7 @@ pub struct Config {
     pub cctalk_serial_port: String,
     pub cctalk_coin_overrides: Vec<[i32; 2]>,
     pub stats_db_path: String,
+    pub photos_dir: String,
     pub retroarch_command: String,
     pub games: Vec<GameEntry>,
 }
@@ -49,6 +50,7 @@ impl Default for Config {
             cctalk_serial_port: "/dev/ttyUSB0".to_string(),
             cctalk_coin_overrides: Vec::new(),
             stats_db_path: "data/Stats.db".to_string(),
+            photos_dir: "data/photos".to_string(),
             retroarch_command: "retroarch".to_string(),
             games: Vec::new(),
         }

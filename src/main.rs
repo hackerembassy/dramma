@@ -3,6 +3,7 @@
 
 slint::include_modules!();
 
+mod camera;
 mod cashcode;
 mod cctalk;
 mod config;
@@ -597,6 +598,7 @@ mod donation_handler {
         weak: slint::Weak<MainWindow>,
         cashcode_tx: Sender<bill_acceptor::CashCodeCommand>,
         token: Option<String>,
+        photos_dir: String,
     ) -> slint::Timer {
         let timer = slint::Timer::default();
         timer.start(
@@ -637,6 +639,7 @@ mod donation_handler {
                             let username = window.get_session_username().to_string();
                             let fund_id = window.get_session_fund_id();
                             let tok = tok.clone();
+                            let photos_dir = photos_dir.clone();
                             slint::spawn_local(async move {
                                 match donation::send_donation(&tok, fund_id, &username, amount)
                                     .await
@@ -644,6 +647,9 @@ mod donation_handler {
                                     Ok(_) => {
                                         sound::play_yippee();
                                         info!("✅ Auto-approved donation sent successfully!");
+                                        if username != "anon" {
+                                            camera::capture_donation_photo(&photos_dir, &username);
+                                        }
                                     }
                                     Err(e) => {
                                         error!("❌ Auto-approve: failed to send donation: {}", e)
@@ -680,6 +686,7 @@ mod donation_handler {
             let cashcode_tx = cashcode_tx.clone();
             let cctalk_tx = cctalk_tx.clone();
             let token = config.token.clone();
+            let photos_dir = config.photos_dir.clone();
             move |username, fund_id, amount| {
                 info!(
                     "💰 Processing donation: {} AMD from {} to fund {}",
@@ -703,12 +710,16 @@ mod donation_handler {
                     // Send donation asynchronously using slint::spawn_local
                     let token = token.clone();
                     let username_str = username.to_string();
+                    let photos_dir = photos_dir.clone();
                     slint::spawn_local(async move {
                         match donation::send_donation(&token, fund_id, &username_str, amount).await
                         {
                             Ok(_) => {
                                 sound::play_yippee();
                                 info!("✅ Donation sent successfully!");
+                                if username_str != "anon" {
+                                    camera::capture_donation_photo(&photos_dir, &username_str);
+                                }
                             }
                             Err(e) => error!("❌ Failed to send donation: {}", e),
                         }
@@ -724,6 +735,7 @@ mod donation_handler {
         let weak_enter = app.as_weak();
         let cashcode_tx_enter = cashcode_tx.clone();
         let token_enter = config.token.clone();
+        let photos_dir_enter = config.photos_dir.clone();
         let timer_enter = inactivity_timer.clone();
         let ticker_enter = countdown_ticker.clone();
         app.on_enter_insert_money(move || {
@@ -740,6 +752,7 @@ mod donation_handler {
                 weak_enter.clone(),
                 cashcode_tx_enter.clone(),
                 token_enter.clone(),
+                photos_dir_enter.clone(),
             );
             *timer_enter.borrow_mut() = Some(timer);
             // Countdown ticker (1-second decrement)
@@ -764,6 +777,7 @@ mod donation_handler {
         let weak_activity = app.as_weak();
         let cashcode_tx_activity = cashcode_tx.clone();
         let token_activity = config.token.clone();
+        let photos_dir_activity = config.photos_dir.clone();
         let timer_activity = inactivity_timer.clone();
         let ticker_activity = countdown_ticker.clone();
         app.on_activity_on_insert_money(move || {
@@ -777,6 +791,7 @@ mod donation_handler {
                 weak_activity.clone(),
                 cashcode_tx_activity.clone(),
                 token_activity.clone(),
+                photos_dir_activity.clone(),
             );
             *timer_activity.borrow_mut() = Some(timer);
             // Replace countdown ticker
