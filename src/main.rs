@@ -522,8 +522,19 @@ mod fund_fetcher {
 
             slint::spawn_local(async move {
                 match funds::fetch_funds(&token).await {
-                    Ok(value) => {
+                    Ok(mut value) => {
                         info!("✅ Fetched {} funds", value.len());
+
+                        // Sort so that funds containing "Аренда" come first
+                        value.sort_by(|a, b| {
+                            let a_has = a.name.contains("Аренда");
+                            let b_has = b.name.contains("Аренда");
+                            match (a_has, b_has) {
+                                (true, false) => std::cmp::Ordering::Less,
+                                (false, true) => std::cmp::Ordering::Greater,
+                                _ => a.id.cmp(&b.id),
+                            }
+                        });
 
                         // Convert funds to string array for ComboBox
                         let model_data: Vec<slint::SharedString> = value
