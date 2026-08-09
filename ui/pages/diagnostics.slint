@@ -12,7 +12,7 @@ export component Diagnostics inherits Rectangle {
     callback reenumerate-coins();
     callback play-sound();
     callback check-backend();
-    callback open-logs();
+
 
     in-out property <[LogEntry]> log-lines: [];
     in property <LogEntry> bill-status: { level: 0, text: "Initializing..." };
@@ -128,17 +128,7 @@ export component Diagnostics inherits Rectangle {
                 }
             }
 
-            Button {
-                text: "Donation Wall";
-                width: 200px;
-                enabled: !root.guard;
-                clicked => {
-                    inactivity-timer.running = false;
-                    inactivity-timer.running = true;
-                    root.seconds-left = 120;
-                    root.open-logs();
-                }
-            }
+
         }
 
         // ── Status panel ─────────────────────────────────────────────────
