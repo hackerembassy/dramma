@@ -9,7 +9,6 @@ import { InsertCoins } from "pages/insert_coins.slint";
 import { HomeAssistant } from "pages/home_assistant.slint";
 import { Diagnostics, LogEntry } from "pages/diagnostics.slint";
 import { DiagnosticsAuth } from "pages/diagnostics_auth.slint";
-import { Logs, DonationLogItem } from "pages/logs.slint";
 
 export { VirtualKeyboardHandler, KeyModel, AutocompleteHandler }
 
@@ -21,7 +20,6 @@ enum Page {
     HomeAssistant,
     DiagnosticsAuth,
     Diagnostics,
-    Logs,
     Top,
     Games
 }
@@ -65,10 +63,6 @@ export component MainWindow inherits Window {
     callback diag-reenumerate-coins();
     callback diag-play-sound();
     callback diag-check-backend();
-
-    // donation wall
-    in-out property <[DonationLogItem]> donation-logs: [];
-    callback fetch-logs();
 
     // callbacks for rust to hook into
     callback done-clicked(string, int, int);  // username, fund_id, amount
@@ -272,15 +266,7 @@ export component MainWindow inherits Window {
                 root.current-page = Page.Logs;
             }
         }
-        if current-page == Page.Logs: Logs {
-            entries: root.donation-logs;
-            fetch-logs => {
-                root.fetch-logs();
-            }
-            back-clicked => {
-                root.current-page = Page.Diagnostics;
-            }
-        }
+
 
         // Confetti overlay — rendered on top of all pages
         if root.show-confetti: ConfettiOverlay {

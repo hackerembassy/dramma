@@ -15,7 +15,7 @@ global Theme {
 
 // ─── Feature card ─────────────────────────────────────────────────────────────
 component FeatureCard inherits Rectangle {
-    in property <color> accent;
+    in property <color>  accent;
     in property <string> icon;
     in property <string> label;
     in property <string> description;
@@ -33,14 +33,9 @@ component FeatureCard inherits Rectangle {
     drop-shadow-color: accent.with-alpha(0.15);
     drop-shadow-offset-y: 6px;
 
-    animate border-color {
-        duration: 200ms;
-        easing: ease-out;
-    }
-    animate drop-shadow-color {
-        duration: 200ms;
-        easing: ease-out;
-    }
+    animate border-color { duration: 200ms; easing: ease-out; }
+    animate drop-shadow-color { duration: 200ms; easing: ease-out; }
+
 
     VerticalLayout {
         padding: 28px;
@@ -85,9 +80,7 @@ component FeatureCard inherits Rectangle {
 
     TouchArea {
         mouse-cursor: pointer;
-        clicked => {
-            root.clicked();
-        }
+        clicked => { root.clicked(); }
         pointer-event(e) => {
             if e.kind == PointerEventKind.move || e.kind == PointerEventKind.up {
                 root.hover-factor = self.has-hover ? 1.0 : 0.0;
@@ -107,17 +100,14 @@ export component Main inherits Rectangle {
     tap-reset := Timer {
         interval: 3s;
         running: root.tap-count > 0 && root.tap-count < 5;
-        triggered => {
-            root.tap-count = 0;
-        }
+        triggered => { root.tap-count = 0; }
     }
 
     background: Theme.bg-top;
 
     // Subtle radial gradient overlay in center
     Rectangle {
-        x: 0;
-        y: 0;
+        x: 0;  y: 0;
         width: parent.width;
         height: parent.height;
         background: @linear-gradient(160deg, #1a0d33 0%, #0d0d1a 40%, #0d1a2b 100%);
@@ -205,9 +195,7 @@ export component Main inherits Rectangle {
                 icon: "💸";
                 label: "Donate";
                 description: "Support Hacker Embassy directly.\nEvery coin counts!";
-                clicked => {
-                    root.donate-clicked();
-                }
+                clicked => { root.donate-clicked(); }
             }
 
             FeatureCard {
@@ -215,9 +203,7 @@ export component Main inherits Rectangle {
                 icon: "🏠";
                 label: "Control Space";
                 description: "Manage lights, climate & more\nvia Home Assistant.";
-                clicked => {
-                    root.home-assistant-clicked();
-                }
+                clicked => { root.home-assistant-clicked(); }
             }
 
             FeatureCard {
@@ -225,9 +211,7 @@ export component Main inherits Rectangle {
                 icon: "🎮";
                 label: "Play Games";
                 description: "Insert coins and enjoy\nretro games on the machine!";
-                clicked => {
-                    root.play-clicked();
-                }
+                clicked => { root.play-clicked(); }
             }
         }
 
