@@ -1425,6 +1425,7 @@ dependencies = [
  "cc_talk_tokio_host",
  "env_logger",
  "http",
+ "image",
  "isahc",
  "log",
  "rodio",

@@ -32,6 +32,7 @@ pub struct Config {
     pub hass_api_port: u16,
     pub cashcode_serial_port: String,
     pub cctalk_serial_port: String,
+    pub printer_serial_port: String,
     pub cctalk_coin_overrides: Vec<[i32; 2]>,
     pub stats_db_path: String,
     pub retroarch_command: String,
@@ -49,6 +50,8 @@ impl Default for Config {
                 "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0"
                     .to_string(),
             cctalk_serial_port: "/dev/ttyUSB0".to_string(),
+            printer_serial_port:
+                "/dev/serial/by-id/usb-GigaDevice_GD32-CDC_ACM_737A7C670534-if00".to_string(),
             cctalk_coin_overrides: Vec::new(),
             stats_db_path: "data/Stats.db".to_string(),
             retroarch_command: "retroarch".to_string(),

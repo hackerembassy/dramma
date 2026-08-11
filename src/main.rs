@@ -11,6 +11,7 @@ mod donation;
 mod error;
 mod funds;
 mod home_assistant;
+mod printer;
 mod retroarch;
 mod sound;
 
@@ -63,6 +64,7 @@ pub fn main() {
 
     virtual_keyboard::init(&main_window);
     autocomplete_handler::init(&main_window);
+    let _printer_tx = printer::init(config.printer_serial_port.clone());
     let cashcode_tx = bill_acceptor::init(&main_window, &config);
     let cctalk_tx = coin_acceptor::init(&main_window, &config, cashcode_tx.clone());
     fund_fetcher::init(&main_window, &config);
