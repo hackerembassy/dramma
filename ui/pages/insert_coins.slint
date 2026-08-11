@@ -47,7 +47,7 @@ export component InsertCoins inherits Rectangle {
     Timer { interval: 600ms;  running: root.last-added-amount == 0 && root.toast-active;
         triggered => { root.toast-active = false; } }
 
-    background: Palette.background;
+    background: #000000;
 
     // ─── Layout ───────────────────────────────────────────────────────────────
     HorizontalLayout {
@@ -58,7 +58,7 @@ export component InsertCoins inherits Rectangle {
         Rectangle {
             width: 420px;
             border-radius: 16px;
-            background: Palette.color-scheme == ColorScheme.dark ? #1a1a2e : #eeeef7;
+            background: Palette.color-scheme == ColorScheme.dark ? #121212 : #eeeef7;
 
             VerticalLayout {
                 padding: 20px;
@@ -80,7 +80,7 @@ export component InsertCoins inherits Rectangle {
                     border-radius: 12px;
                     background: root.selected-game-index == i
                         ? #6c5ce7
-                        : (Palette.color-scheme == ColorScheme.dark ? #2d2d4a : #d8d8ee);
+                        : (Palette.color-scheme == ColorScheme.dark ? #222222 : #d8d8ee);
                     animate background { duration: 150ms; }
 
                     Text {
@@ -208,7 +208,7 @@ export component InsertCoins inherits Rectangle {
 
                 Text {
                     text: root.current-amount >= 50
-                        ? "⏱ Play time: " + root.play-min + " min " + (root.play-sec > 0 ? root.play-sec + " sec" : "")
+                        ? "Play time: " + root.play-min + " min " + (root.play-sec > 0 ? root.play-sec + " sec" : "")
                         : "Insert money to see your play time";
                     font-size: 22px;
                     font-weight: 600;
@@ -231,10 +231,11 @@ export component InsertCoins inherits Rectangle {
                 spacing: 16px;
 
                 launch-btn := Button {
-                    text: "🚀 Launch";
+                    text: "Launch";
+                    primary: true;
                     enabled: root.current-amount >= 50;
                     height: 100px;
-                    width: 180px;
+                    horizontal-stretch: 1;
 
                     clicked => {
                         root.launch-clicked(root.current-amount, root.selected-game-name, false);
@@ -243,12 +244,11 @@ export component InsertCoins inherits Rectangle {
 
                 launch-receipt-btn := Button {
                     text: root.current-amount >= 50
-                        ? "🚀 Launch, print receipt 🖨️"
-                        : "🚀 Launch (insert money first)";
-                    primary: true;
+                        ? "Launch, print receipt"
+                        : "Launch (insert money first)";
                     enabled: root.current-amount >= 50;
                     height: 100px;
-                    horizontal-stretch: 1;
+                    width: 320px;
 
                     clicked => {
                         root.launch-clicked(root.current-amount, root.selected-game-name, true);

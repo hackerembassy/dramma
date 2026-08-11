@@ -11,7 +11,7 @@ export component InsertMoney inherits Rectangle {
     callback done-clicked(string, int, bool);  // username, amount, print_receipt
     callback screen-tapped();  // any tap on screen resets inactivity timer
 
-    background: Palette.background;
+    background: #000000;
 
     // Background TouchArea — catches taps on any empty area of the screen.
     // Placed first so it renders behind the content; foreground buttons still capture their own events.
@@ -72,7 +72,7 @@ export component InsertMoney inherits Rectangle {
             }
 
             if root.current-amount > 0: Text {
-                text: "🔒 Cannot cancel after inserting money";
+                text: "Cannot cancel after inserting money";
                 font-size: 16px;
                 color: Palette.foreground;
                 opacity: 0.5;
@@ -190,9 +190,10 @@ export component InsertMoney inherits Rectangle {
             spacing: 24px;
 
             done-button := Button {
-                text: "Done ✓";
+                text: "Done";
+                primary: true;
                 enabled: root.current-amount > 0;
-                width: 200px;
+                width: 320px;
                 height: 110px;
 
                 clicked => {
@@ -201,10 +202,9 @@ export component InsertMoney inherits Rectangle {
             }
 
             done-receipt-button := Button {
-                text: "Done, print receipt 🖨️";
-                primary: true;
+                text: "Done, print receipt";
                 enabled: root.current-amount > 0;
-                width: 320px;
+                width: 280px;
                 height: 110px;
 
                 clicked => {
@@ -232,8 +232,8 @@ export component InsertMoney inherits Rectangle {
 
             Text {
                 text: root.current-amount > 0
-                    ? "⏱ Auto-approves in " + root.seconds-left + "s"
-                    : "⏱ Auto-cancels in " + root.seconds-left + "s";
+                    ? "Auto-approves in " + root.seconds-left + "s"
+                    : "Auto-cancels in " + root.seconds-left + "s";
                 font-size: 14px;
                 color: root.seconds-left <= 30 ? #ff4444 :
                        root.seconds-left <= 60 ? #ff8800 :

@@ -1,15 +1,15 @@
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 global Theme {
-    out property <color> bg-top:        #0d0d1a;
-    out property <color> bg-bottom:     #12122b;
-    out property <color> card-bg:       #1c1c3a;
-    out property <color> card-border:   #2e2e60;
+    out property <color> bg-top:        #000000;
+    out property <color> bg-bottom:     #000000;
+    out property <color> card-bg:       #121212;
+    out property <color> card-border:   #333333;
     out property <color> accent-donate: #e05a77;
     out property <color> accent-hass:   #5ab8e0;
     out property <color> accent-play:   #7de05a;
-    out property <color> text-primary:  #f0eeff;
-    out property <color> text-muted:    #8888bb;
+    out property <color> text-primary:  #ffffff;
+    out property <color> text-muted:    #a0a0a0;
     out property <color> github-accent: #c9b8ff;
 }
 
@@ -27,14 +27,10 @@ component FeatureCard inherits Rectangle {
     height: 220px;
     border-radius: 18px;
     background: Theme.card-bg;
-    border-width: 1.5px;
-    border-color: accent.mix(Theme.card-border, 0.35);
-    drop-shadow-blur: 20px;
-    drop-shadow-color: accent.with-alpha(0.15);
-    drop-shadow-offset-y: 6px;
+    border-width: 2px;
+    border-color: accent.mix(Theme.card-border, 0.2);
 
     animate border-color { duration: 200ms; easing: ease-out; }
-    animate drop-shadow-color { duration: 200ms; easing: ease-out; }
 
 
     VerticalLayout {
@@ -103,15 +99,7 @@ export component Main inherits Rectangle {
         triggered => { root.tap-count = 0; }
     }
 
-    background: Theme.bg-top;
-
-    // Subtle radial gradient overlay in center
-    Rectangle {
-        x: 0;  y: 0;
-        width: parent.width;
-        height: parent.height;
-        background: @linear-gradient(160deg, #1a0d33 0%, #0d0d1a 40%, #0d1a2b 100%);
-    }
+    background: #000000;
 
     VerticalLayout {
         alignment: center;
