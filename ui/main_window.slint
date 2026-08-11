@@ -59,6 +59,7 @@ export component MainWindow inherits Window {
     callback diag-reenumerate-coins();
     callback diag-play-sound();
     callback diag-check-backend();
+    callback diag-test-printer();
 
     // callbacks for rust to hook into
     callback done-clicked(string, int, int);  // username, fund_id, amount
@@ -246,6 +247,7 @@ export component MainWindow inherits Window {
             reenumerate-coins => { root.diag-reenumerate-coins(); }
             play-sound => { root.diag-play-sound(); }
             check-backend => { root.diag-check-backend(); }
+            test-printer => { root.diag-test-printer(); }
         }
 
 

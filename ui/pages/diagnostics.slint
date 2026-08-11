@@ -12,6 +12,7 @@ export component Diagnostics inherits Rectangle {
     callback reenumerate-coins();
     callback play-sound();
     callback check-backend();
+    callback test-printer();
 
 
     in-out property <[LogEntry]> log-lines: [];
@@ -128,7 +129,17 @@ export component Diagnostics inherits Rectangle {
                 }
             }
 
-
+            Button {
+                text: "Test Printer";
+                width: 180px;
+                enabled: !root.guard;
+                clicked => {
+                    inactivity-timer.running = false;
+                    inactivity-timer.running = true;
+                    root.seconds-left = 120;
+                    root.test-printer();
+                }
+            }
         }
 
         // ── Status panel ─────────────────────────────────────────────────
