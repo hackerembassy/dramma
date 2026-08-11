@@ -33,7 +33,6 @@ imageproc = "0.25"
 ab_glyph = "0.2"
 qrcode = "0.14"
 chrono = "0.4"
-sha2 = "0.10"
 
 [build-dependencies]
 slint-build = "1.14.1"

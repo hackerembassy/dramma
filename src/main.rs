@@ -673,13 +673,8 @@ mod donation_handler {
                                         sound::play_yippee();
                                         info!("✅ Auto-approved donation sent successfully!");
 
-                                        let roles = donation::fetch_user_roles(&tok, &username)
-                                            .await
-                                            .unwrap_or_else(|_| vec!["guest".to_string()]);
-
                                         let receipt_data = receipt_render::ReceiptData::new_donation(
                                             username,
-                                            roles,
                                             fund_name,
                                             fund_id,
                                             amount,
@@ -762,13 +757,8 @@ mod donation_handler {
                                 info!("✅ Donation sent successfully!");
 
                                 if print_receipt {
-                                    let roles = donation::fetch_user_roles(&token, &username_str)
-                                        .await
-                                        .unwrap_or_else(|_| vec!["guest".to_string()]);
-
                                     let receipt_data = receipt_render::ReceiptData::new_donation(
                                         username_str,
-                                        roles,
                                         fund_name_str,
                                         fund_id,
                                         amount,
@@ -1144,7 +1134,6 @@ mod game_handler {
         let tick_timer: Rc<RefCell<Option<Timer>>> = Rc::new(RefCell::new(None));
 
         let weak = app.as_weak();
-        let token = config.token.clone();
 
         app.on_launch_game({
             let retroarch = retroarch.clone();
@@ -1155,7 +1144,6 @@ mod game_handler {
             let tick_timer = tick_timer.clone();
             let weak = weak.clone();
             let printer_tx = printer_tx;
-            let token = token;
 
             move |amount, game_name, print_receipt| {
                 // Clear any existing timers first
@@ -1182,19 +1170,9 @@ mod game_handler {
                     };
 
                     let printer_tx = printer_tx.clone();
-                    let token = token.clone();
                     let _ = slint::spawn_local(async move {
-                        let roles = if let Some(ref tok) = token {
-                            donation::fetch_user_roles(tok, "guest")
-                                .await
-                                .unwrap_or_else(|_| vec!["guest".to_string()])
-                        } else {
-                            vec!["guest".to_string()]
-                        };
-
                         let receipt_data = receipt_render::ReceiptData::new_game(
                             "guest".to_string(),
-                            roles,
                             game_name_str,
                             duration_str,
                             amount,

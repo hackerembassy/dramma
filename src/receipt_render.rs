@@ -3,7 +3,6 @@ use chrono::{DateTime, Local};
 use image::{DynamicImage, GenericImageView, GrayImage, ImageBuffer, Luma, Rgb, RgbImage};
 use imageproc::drawing::draw_text_mut;
 use qrcode::QrCode;
-use sha2::{Digest, Sha256};
 
 const FONT_REGULAR_BYTES: &[u8] = include_bytes!("../ui/assets/Roboto-Regular.ttf");
 const FONT_BOLD_BYTES: &[u8] = include_bytes!("../ui/assets/Roboto-Bold.ttf");
@@ -22,70 +21,55 @@ pub enum ReceiptKind {
 pub struct ReceiptData {
     pub kind: ReceiptKind,
     pub username: String,
-    pub user_roles: Vec<String>,
     pub amount: i32,
     pub currency: String,
     pub timestamp: DateTime<Local>,
-    pub transaction_hash: String,
 }
 
 impl ReceiptData {
     pub fn new_test_print() -> Self {
         let now = Local::now();
-        let hash = format!("{:x}", Sha256::digest(format!("test-print-{}", now).as_bytes()));
         Self {
             kind: ReceiptKind::TestPrint,
             username: "diagnostics".to_string(),
-            user_roles: vec!["admin".to_string()],
             amount: 0,
             currency: "AMD".to_string(),
             timestamp: now,
-            transaction_hash: hash[..16].to_string(),
         }
     }
 
     pub fn new_donation(
         username: String,
-        user_roles: Vec<String>,
         fund_name: String,
         fund_id: i32,
         amount: i32,
     ) -> Self {
         let now = Local::now();
-        let raw = format!("donation-{}-{}-{}-{}", username, fund_id, amount, now);
-        let hash = format!("{:x}", Sha256::digest(raw.as_bytes()));
         Self {
             kind: ReceiptKind::Donation { fund_name, fund_id },
             username,
-            user_roles,
             amount,
             currency: "AMD".to_string(),
             timestamp: now,
-            transaction_hash: hash[..16].to_string(),
         }
     }
 
     pub fn new_game(
         username: String,
-        user_roles: Vec<String>,
         game_name: String,
         duration_str: String,
         amount: i32,
     ) -> Self {
         let now = Local::now();
-        let raw = format!("game-{}-{}-{}-{}", username, game_name, amount, now);
-        let hash = format!("{:x}", Sha256::digest(raw.as_bytes()));
         Self {
             kind: ReceiptKind::ArcadeGame {
                 game_name,
                 duration_str,
             },
             username,
-            user_roles,
             amount,
             currency: "AMD".to_string(),
             timestamp: now,
-            transaction_hash: hash[..16].to_string(),
         }
     }
 }
@@ -117,8 +101,7 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
         }
     };
 
-    // --- 1. HEADER SECTION ---
-    // Top Left: xkem.png logo (Enlarged)
+    // --- HEADER SECTION ---
     if let Ok(logo_img) = image::load_from_memory(LOGO_BYTES) {
         let logo_resized = logo_img.resize(110, 80, image::imageops::FilterType::Lanczos3);
         let (lw, lh) = logo_resized.dimensions();
@@ -137,11 +120,9 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
         }
     }
 
-    // Top Center: Text headers (Enlarged)
     draw_text_mut(&mut canvas, black, 135, y_cursor + 5, PxScale::from(36.0), &font_bold, "Hacker Embassy");
     draw_text_mut(&mut canvas, black, 135, y_cursor + 40, PxScale::from(28.0), &font_regular, "> dramma");
 
-    // Top Right: 90° Rotated Timestamp / Date (Enlarged)
     let time_str = data.timestamp.format("%H:%M:%S").to_string();
     let date_str = data.timestamp.format("%d.%m.%y").to_string();
 
@@ -169,7 +150,7 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
     draw_grey_divider(&mut canvas, y_cursor);
     y_cursor += 15;
 
-    // --- 2. TITLE SECTION ---
+    // --- TITLE SECTION ---
     let title_text = match data.kind {
         ReceiptKind::TestPrint => ">>           TEST PRINT           <<",
         _ => ">>            RECEIPT            <<",
@@ -179,7 +160,7 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
     draw_grey_divider(&mut canvas, y_cursor);
     y_cursor += 20;
 
-    // --- 3. BODY SECTION ---
+    // --- BODY SECTION ---
     match &data.kind {
         ReceiptKind::Donation { fund_name, fund_id } => {
             let handle_str = if data.username.starts_with('@') {
@@ -188,15 +169,7 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
                 format!("@{}", data.username)
             };
             draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(24.0), &font_bold, &handle_str);
-            y_cursor += 32;
-
-            let roles_str = if data.user_roles.is_empty() {
-                "roles: guest".to_string()
-            } else {
-                format!("roles: {}", data.user_roles.join(", "))
-            };
-            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(20.0), &font_regular, &roles_str);
-            y_cursor += 32;
+            y_cursor += 36;
 
             draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(22.0), &font_bold, "Donated to");
             y_cursor += 32;
@@ -213,15 +186,7 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
                 format!("@{}", data.username)
             };
             draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(24.0), &font_bold, &handle_str);
-            y_cursor += 32;
-
-            let roles_str = if data.user_roles.is_empty() {
-                "roles: guest".to_string()
-            } else {
-                format!("roles: {}", data.user_roles.join(", "))
-            };
-            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(20.0), &font_regular, &roles_str);
-            y_cursor += 32;
+            y_cursor += 36;
 
             draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(22.0), &font_regular, "Played in");
             draw_text_mut(&mut canvas, black, CANVAS_WIDTH as i32 - 200, y_cursor, PxScale::from(24.0), &font_bold, game_name);
@@ -241,7 +206,7 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
     draw_grey_divider(&mut canvas, y_cursor);
     y_cursor += 20;
 
-    // --- 4. PAYMENT SECTION (Omitted for TestPrint) ---
+    // --- PAYMENT SECTION ---
     if !matches!(data.kind, ReceiptKind::TestPrint) {
         draw_text_mut(&mut canvas, black, 160, y_cursor, PxScale::from(26.0), &font_bold, ">>      PAID      <<");
         y_cursor += 35;
@@ -255,8 +220,7 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
         y_cursor += 20;
     }
 
-    // --- 5. FOOTER SECTION ---
-    // Bottom Left: QR Code (Dimensions ~116x116)
+    // --- FOOTER SECTION ---
     let _qr_size = if let Ok(qr) = QrCode::new("https://hackem.cc") {
         let qr_img = qr.render::<image::Luma<u8>>()
             .quiet_zone(false)
@@ -280,7 +244,7 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
         116
     };
 
-    // Bottom Right: Address text (Enlarged to span full height of QR code ~116px)
+    // Bottom Right: Address text
     let text_x = 160;
     draw_text_mut(&mut canvas, black, text_x, y_cursor, PxScale::from(24.0), &font_bold, "Thanks! :3");
     draw_text_mut(&mut canvas, black, text_x, y_cursor + 30, PxScale::from(22.0), &font_regular, "Baghramyan 60");
@@ -353,7 +317,7 @@ pub fn render_receipt_to_escpos(data: &ReceiptData) -> Vec<u8> {
         }
     }
 
-    // Feed lines & Cut sequence: GS V 0
+    // Feed lines & Cut sequence
     buf.extend_from_slice(b"\n\n\n\n\x1D\x56\x00");
 
     buf

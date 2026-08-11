@@ -8,6 +8,7 @@ use std::time::Duration;
 use crate::receipt_render::{self, ReceiptData};
 
 pub enum PrinterCommand {
+    #[allow(dead_code)]
     PrintRaw(Vec<u8>),
     PrintTestReceipt,
     PrintReceipt(ReceiptData),
