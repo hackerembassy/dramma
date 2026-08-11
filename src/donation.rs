@@ -86,3 +86,31 @@ pub async fn fetch_usernames(token: &str) -> Result<Vec<String>, RequestError> {
         })
     }
 }
+
+#[derive(Debug, serde::Deserialize)]
+pub struct UserInfoResponse {
+    pub roles: Option<Vec<String>>,
+}
+
+/// Fetches user roles from the API asynchronously
+pub async fn fetch_user_roles(token: &str, username: &str) -> Result<Vec<String>, RequestError> {
+    let url = format!("https://gateway.hackem.cc/api/users/{}", username);
+    let request = Request::get(&url)
+        .header("Authorization", format!("Bearer {}", token))
+        .header("Content-Type", "application/json")
+        .body(())?;
+
+    let mut response = isahc::send_async(request).await?;
+
+    if response.status().is_success() {
+        if let Ok(info) = response.json::<UserInfoResponse>().await {
+            if let Some(roles) = info.roles {
+                if !roles.is_empty() {
+                    return Ok(roles);
+                }
+            }
+        }
+    }
+
+    Ok(vec!["guest".to_string()])
+}
