@@ -725,15 +725,15 @@ mod donation_handler {
             let printer_tx = printer_tx.clone();
             let token = config.token.clone();
             let app_weak = app_weak.clone();
-            move |username, fund_id, amount| {
+            move |username, fund_id, amount, print_receipt| {
                 let fund_name_str = app_weak
                     .upgrade()
                     .map(|w| w.get_session_fund_name().to_string())
                     .unwrap_or_default();
 
                 info!(
-                    "💰 Processing donation: {} AMD from {} to fund {}",
-                    amount, username, fund_id
+                    "💰 Processing donation: {} AMD from {} to fund {} (print_receipt: {})",
+                    amount, username, fund_id, print_receipt
                 );
 
                 // Stop accepting money immediately
@@ -761,18 +761,20 @@ mod donation_handler {
                                 sound::play_yippee();
                                 info!("✅ Donation sent successfully!");
 
-                                let roles = donation::fetch_user_roles(&token, &username_str)
-                                    .await
-                                    .unwrap_or_else(|_| vec!["guest".to_string()]);
+                                if print_receipt {
+                                    let roles = donation::fetch_user_roles(&token, &username_str)
+                                        .await
+                                        .unwrap_or_else(|_| vec!["guest".to_string()]);
 
-                                let receipt_data = receipt_render::ReceiptData::new_donation(
-                                    username_str,
-                                    roles,
-                                    fund_name_str,
-                                    fund_id,
-                                    amount,
-                                );
-                                let _ = printer_tx.send(printer::PrinterCommand::PrintReceipt(receipt_data));
+                                    let receipt_data = receipt_render::ReceiptData::new_donation(
+                                        username_str,
+                                        roles,
+                                        fund_name_str,
+                                        fund_id,
+                                        amount,
+                                    );
+                                    let _ = printer_tx.send(printer::PrinterCommand::PrintReceipt(receipt_data));
+                                }
                             }
                             Err(e) => error!("❌ Failed to send donation: {}", e),
                         }
@@ -1155,7 +1157,7 @@ mod game_handler {
             let printer_tx = printer_tx;
             let token = token;
 
-            move |amount, game_name| {
+            move |amount, game_name, print_receipt| {
                 // Clear any existing timers first
                 *session_timer.borrow_mut() = None;
                 *two_min_timer.borrow_mut() = None;
@@ -1165,39 +1167,41 @@ mod game_handler {
                 // Compute session duration: 100 AMD = 300 seconds
                 let total_secs = (amount as u64) * 3;
                 info!(
-                    "🎮 Game session: {} AMD → {} sec, game: {}",
-                    amount, total_secs, game_name
+                    "🎮 Game session: {} AMD → {} sec, game: {} (print_receipt: {})",
+                    amount, total_secs, game_name, print_receipt
                 );
 
-                let game_name_str = game_name.to_string();
-                let duration_mins = total_secs / 60;
-                let duration_rem = total_secs % 60;
-                let duration_str = if duration_rem == 0 {
-                    format!("{}m", duration_mins)
-                } else {
-                    format!("{}m {}s", duration_mins, duration_rem)
-                };
-
-                let printer_tx = printer_tx.clone();
-                let token = token.clone();
-                let _ = slint::spawn_local(async move {
-                    let roles = if let Some(ref tok) = token {
-                        donation::fetch_user_roles(tok, "guest")
-                            .await
-                            .unwrap_or_else(|_| vec!["guest".to_string()])
+                if print_receipt {
+                    let game_name_str = game_name.to_string();
+                    let duration_mins = total_secs / 60;
+                    let duration_rem = total_secs % 60;
+                    let duration_str = if duration_rem == 0 {
+                        format!("{}m", duration_mins)
                     } else {
-                        vec!["guest".to_string()]
+                        format!("{}m {}s", duration_mins, duration_rem)
                     };
 
-                    let receipt_data = receipt_render::ReceiptData::new_game(
-                        "guest".to_string(),
-                        roles,
-                        game_name_str,
-                        duration_str,
-                        amount,
-                    );
-                    let _ = printer_tx.send(printer::PrinterCommand::PrintReceipt(receipt_data));
-                });
+                    let printer_tx = printer_tx.clone();
+                    let token = token.clone();
+                    let _ = slint::spawn_local(async move {
+                        let roles = if let Some(ref tok) = token {
+                            donation::fetch_user_roles(tok, "guest")
+                                .await
+                                .unwrap_or_else(|_| vec!["guest".to_string()])
+                        } else {
+                            vec!["guest".to_string()]
+                        };
+
+                        let receipt_data = receipt_render::ReceiptData::new_game(
+                            "guest".to_string(),
+                            roles,
+                            game_name_str,
+                            duration_str,
+                            amount,
+                        );
+                        let _ = printer_tx.send(printer::PrinterCommand::PrintReceipt(receipt_data));
+                    });
+                }
 
                 // Find the matching GameEntry (if configured), otherwise use a blank entry
                 // so RetroArch launches with its own saved config.

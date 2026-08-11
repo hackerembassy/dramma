@@ -8,7 +8,7 @@ export component InsertMoney inherits Rectangle {
     in property <int> seconds-left: 180;  // countdown updated by Rust
 
     callback cancel-clicked();
-    callback done-clicked(string, int);  // username, amount
+    callback done-clicked(string, int, bool);  // username, amount, print_receipt
     callback screen-tapped();  // any tap on screen resets inactivity timer
 
     background: Palette.background;
@@ -184,19 +184,31 @@ export component InsertMoney inherits Rectangle {
             vertical-stretch: 1;
         }
 
-        // done button
+        // done buttons
         HorizontalLayout {
             alignment: center;
+            spacing: 24px;
 
             done-button := Button {
                 text: "Done ✓";
-                primary: true;
                 enabled: root.current-amount > 0;
-                width: 350px;
-                height: 120px;
+                width: 200px;
+                height: 110px;
 
                 clicked => {
-                    root.done-clicked(root.username, root.current-amount);
+                    root.done-clicked(root.username, root.current-amount, false);
+                }
+            }
+
+            done-receipt-button := Button {
+                text: "Done, print receipt 🖨️";
+                primary: true;
+                enabled: root.current-amount > 0;
+                width: 320px;
+                height: 110px;
+
+                clicked => {
+                    root.done-clicked(root.username, root.current-amount, true);
                 }
             }
         }

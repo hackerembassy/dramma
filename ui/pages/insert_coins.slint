@@ -9,7 +9,7 @@ export component InsertCoins inherits Rectangle {
 
     // ─── Callbacks ────────────────────────────────────────────────────────────
     callback cancel-clicked();
-    callback launch-clicked(int, string);  // amount, game-name
+    callback launch-clicked(int, string, bool);  // amount, game-name, print_receipt
 
     // ─── Internal state ───────────────────────────────────────────────────────
     property <int>    selected-game-index: 0;
@@ -225,20 +225,33 @@ export component InsertCoins inherits Rectangle {
 
             Rectangle { vertical-stretch: 1; }
 
-            // LAUNCH button
+            // LAUNCH buttons
             HorizontalLayout {
                 alignment: center;
+                spacing: 16px;
 
                 launch-btn := Button {
-                    text: root.current-amount >= 50
-                        ? "🚀 Launch  " + root.selected-game-name
-                        : "🚀 Launch  (insert money first)";
-                    primary: true;
+                    text: "🚀 Launch";
                     enabled: root.current-amount >= 50;
-                    height: 110px;
+                    height: 100px;
+                    width: 180px;
 
                     clicked => {
-                        root.launch-clicked(root.current-amount, root.selected-game-name);
+                        root.launch-clicked(root.current-amount, root.selected-game-name, false);
+                    }
+                }
+
+                launch-receipt-btn := Button {
+                    text: root.current-amount >= 50
+                        ? "🚀 Launch, print receipt 🖨️"
+                        : "🚀 Launch (insert money first)";
+                    primary: true;
+                    enabled: root.current-amount >= 50;
+                    height: 100px;
+                    horizontal-stretch: 1;
+
+                    clicked => {
+                        root.launch-clicked(root.current-amount, root.selected-game-name, true);
                     }
                 }
             }

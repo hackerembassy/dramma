@@ -138,12 +138,12 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
     }
 
     // Top Center: Text headers (Enlarged)
-    draw_text_mut(&mut canvas, black, 135, y_cursor + 5, PxScale::from(30.0), &font_bold, "Hacker Embassy");
-    draw_text_mut(&mut canvas, black, 135, y_cursor + 40, PxScale::from(22.0), &font_regular, "> dramma");
+    draw_text_mut(&mut canvas, black, 135, y_cursor + 5, PxScale::from(36.0), &font_bold, "Hacker Embassy");
+    draw_text_mut(&mut canvas, black, 135, y_cursor + 40, PxScale::from(28.0), &font_regular, "> dramma");
 
     // Top Right: 90° Rotated Timestamp / Date (Enlarged)
     let time_str = data.timestamp.format("%H:%M:%S").to_string();
-    let date_str = data.timestamp.format("%d.%m.%Y").to_string();
+    let date_str = data.timestamp.format("%d.%m.%y").to_string();
 
     let mut time_sub: RgbImage = ImageBuffer::from_pixel(130, 55, Rgb([255, 255, 255]));
     draw_text_mut(&mut time_sub, black, 0, 0, PxScale::from(19.0), &font_bold, &time_str);
@@ -282,10 +282,10 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
 
     // Bottom Right: Address text (Enlarged to span full height of QR code ~116px)
     let text_x = 160;
-    draw_text_mut(&mut canvas, black, text_x, y_cursor, PxScale::from(22.0), &font_bold, "Thanks! :3");
-    draw_text_mut(&mut canvas, black, text_x, y_cursor + 30, PxScale::from(19.0), &font_regular, "Baghramyan 60");
-    draw_text_mut(&mut canvas, black, text_x, y_cursor + 58, PxScale::from(19.0), &font_regular, "Yerevan, Armenia");
-    draw_text_mut(&mut canvas, black, text_x, y_cursor + 88, PxScale::from(22.0), &font_bold, "hackem.cc");
+    draw_text_mut(&mut canvas, black, text_x, y_cursor, PxScale::from(24.0), &font_bold, "Thanks! :3");
+    draw_text_mut(&mut canvas, black, text_x, y_cursor + 30, PxScale::from(22.0), &font_regular, "Baghramyan 60");
+    draw_text_mut(&mut canvas, black, text_x, y_cursor + 58, PxScale::from(22.0), &font_regular, "Yerevan, Armenia");
+    draw_text_mut(&mut canvas, black, text_x, y_cursor + 88, PxScale::from(24.0), &font_bold, "hackem.cc");
 
     canvas
 }
