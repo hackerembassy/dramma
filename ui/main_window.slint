@@ -6,6 +6,7 @@ import { Main } from "pages/main.slint";
 import { Donate } from "pages/donate.slint";
 import { InsertMoney } from "pages/insert_money.slint";
 import { InsertCoins } from "pages/insert_coins.slint";
+import { Cat } from "pages/cat.slint";
 import { HomeAssistant } from "pages/home_assistant.slint";
 import { Diagnostics, LogEntry } from "pages/diagnostics.slint";
 import { DiagnosticsAuth } from "pages/diagnostics_auth.slint";
@@ -21,7 +22,8 @@ enum Page {
     DiagnosticsAuth,
     Diagnostics,
     Top,
-    Games
+    Games,
+    Cat
 }
 
 export component MainWindow inherits Window {
@@ -42,7 +44,7 @@ export component MainWindow inherits Window {
     // inactivity countdown (seconds remaining, updated by Rust)
     in-out property <int> inactivity-seconds-left: 180;
     // read by Rust to guard inactivity timeout from firing on wrong page
-    out property <bool> on-insert-money-page: current-page == Page.InsertMoney;
+    out property <bool> on-insert-money-page: current-page == Page.InsertMoney || current-page == Page.Cat;
 
     // toast state — set by Rust when a bill or coin is accepted
     in-out property <int> last-added-amount: 0;
@@ -63,6 +65,7 @@ export component MainWindow inherits Window {
 
     // callbacks for rust to hook into
     callback done-clicked(string, int, int, bool);  // username, fund_id, amount, print_receipt
+    callback print-cat-clicked(int);  // amount
     callback start-accepting-money();
     callback stop-accepting-money();
     callback show-home-assistant();
@@ -76,7 +79,7 @@ export component MainWindow inherits Window {
     // invoked by rust on inactivity timeout:
     callback cancel-insert-money();  // auto-cancel: go back to donate page
     cancel-insert-money => {
-        root.current-page = Page.Donate;
+        root.current-page = Page.Main;
     }
     callback show-confetti-after-auto-approve();  // auto-approve: go to main + show confetti
     show-confetti-after-auto-approve => {
@@ -128,6 +131,14 @@ export component MainWindow inherits Window {
                 root.last-added-amount = 0;
                 root.start-accepting-money();
                 root.current-page = Page.InsertCoins;
+            }
+
+            cat-clicked => {
+                root.session-amount = 0;
+                root.last-added-amount = 0;
+                root.start-accepting-money();
+                root.current-page = Page.Cat;
+                root.enter-insert-money();
             }
 
             secret-tapped => {
@@ -222,6 +233,42 @@ export component MainWindow inherits Window {
                 root.session-amount = 0;
                 root.launch-game(amount, game-name, print-receipt);
                 root.current-page = Page.Main;
+            }
+        }
+        if current-page == Page.Cat: Cat {
+            current-amount: root.session-amount;
+            seconds-left: root.inactivity-seconds-left;
+
+            // Reset inactivity timer whenever a bill is accepted
+            changed current-amount => {
+                if self.current-amount > 0 {
+                    root.activity-on-insert-money();
+                }
+            }
+
+            // Reset inactivity timer on any screen tap
+            screen-tapped => {
+                root.activity-on-insert-money();
+            }
+            last-added-amount <=> root.last-added-amount;
+
+            cancel-clicked => {
+                root.leave-insert-money();
+                root.stop-accepting-money();
+                root.session-amount = 0;
+                root.current-page = Page.Main;
+            }
+
+            print-clicked(amount) => {
+                root.leave-insert-money();
+                root.stop-accepting-money();
+                root.print-cat-clicked(amount);
+                root.session-amount = 0;
+                root.current-page = Page.Main;
+                if amount > 0 {
+                    root.show-confetti = true;
+                    root.confetti-started();
+                }
             }
         }
         if current-page == Page.HomeAssistant: HomeAssistant {

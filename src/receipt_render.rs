@@ -14,6 +14,7 @@ const CANVAS_WIDTH: u32 = 576; // 80mm thermal paper @ 203 DPI
 pub enum ReceiptKind {
     Donation { fund_name: String, fund_id: i32 },
     ArcadeGame { game_name: String, duration_str: String },
+    CatReceipt,
     TestPrint,
 }
 
@@ -24,6 +25,7 @@ pub struct ReceiptData {
     pub amount: i32,
     pub currency: String,
     pub timestamp: DateTime<Local>,
+    pub cat_image: Option<RgbImage>,
 }
 
 impl ReceiptData {
@@ -35,6 +37,7 @@ impl ReceiptData {
             amount: 0,
             currency: "AMD".to_string(),
             timestamp: now,
+            cat_image: None,
         }
     }
 
@@ -51,6 +54,7 @@ impl ReceiptData {
             amount,
             currency: "AMD".to_string(),
             timestamp: now,
+            cat_image: None,
         }
     }
 
@@ -70,6 +74,19 @@ impl ReceiptData {
             amount,
             currency: "AMD".to_string(),
             timestamp: now,
+            cat_image: None,
+        }
+    }
+
+    pub fn new_cat(amount: i32, cat_image: Option<RgbImage>) -> Self {
+        let now = Local::now();
+        Self {
+            kind: ReceiptKind::CatReceipt,
+            username: "cat-lover".to_string(),
+            amount,
+            currency: "AMD".to_string(),
+            timestamp: now,
+            cat_image,
         }
     }
 }
@@ -80,12 +97,18 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
     let font_bold = FontRef::try_from_slice(FONT_BOLD_BYTES).expect("Valid bold font");
 
     // Dynamic height calculation
+    let mut cat_h = 0;
+    if let Some(ref cat) = data.cat_image {
+        cat_h = cat.height() as i32 + 20;
+    }
+
     let canvas_height = match data.kind {
         ReceiptKind::TestPrint => 450,
-        _ => 600,
+        ReceiptKind::CatReceipt => 300 + cat_h,
+        _ => 600 + cat_h,
     };
 
-    let mut canvas: RgbImage = ImageBuffer::from_pixel(CANVAS_WIDTH, canvas_height, Rgb([255, 255, 255]));
+    let mut canvas: RgbImage = ImageBuffer::from_pixel(CANVAS_WIDTH, canvas_height as u32, Rgb([255, 255, 255]));
     let black = Rgb([0, 0, 0]);
 
     let mut y_cursor: i32 = 10;
@@ -153,6 +176,7 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
     // --- TITLE SECTION ---
     let title_text = match data.kind {
         ReceiptKind::TestPrint => ">>           TEST PRINT           <<",
+        ReceiptKind::CatReceipt => ">>      I JUST WANNA A CAT!      <<",
         _ => ">>            RECEIPT            <<",
     };
     draw_text_mut(&mut canvas, black, 75, y_cursor, PxScale::from(26.0), &font_bold, title_text);
@@ -196,11 +220,33 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
             draw_text_mut(&mut canvas, black, CANVAS_WIDTH as i32 - 150, y_cursor, PxScale::from(24.0), &font_bold, duration_str);
             y_cursor += 42;
         }
+        ReceiptKind::CatReceipt => {
+            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(22.0), &font_regular, "This donation supports");
+            draw_text_mut(&mut canvas, black, 20, y_cursor + 28, PxScale::from(22.0), &font_regular, "maintainers & paper costs.");
+            y_cursor += 65;
+        }
         ReceiptKind::TestPrint => {
             draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(22.0), &font_regular, "If you can read this,");
             draw_text_mut(&mut canvas, black, CANVAS_WIDTH as i32 - 240, y_cursor + 32, PxScale::from(22.0), &font_bold, "printer works fine.");
             y_cursor += 75;
         }
+    }
+
+    // Render the cat image if present
+    if let Some(ref cat) = data.cat_image {
+        let (cw, ch) = cat.dimensions();
+        let x_offset = ((CANVAS_WIDTH - cw) / 2) as i32;
+        for lx in 0..cw {
+            for ly in 0..ch {
+                let p = cat.get_pixel(lx, ly);
+                let cx = x_offset + lx as i32;
+                let cy = y_cursor + ly as i32;
+                if cx >= 0 && cx < CANVAS_WIDTH as i32 && cy >= 0 && cy < canvas.height() as i32 {
+                    canvas.put_pixel(cx as u32, cy as u32, *p);
+                }
+            }
+        }
+        y_cursor += ch as i32 + 10;
     }
 
     draw_grey_divider(&mut canvas, y_cursor);
@@ -330,6 +376,14 @@ mod tests {
     #[test]
     fn test_render_test_receipt() {
         let data = ReceiptData::new_test_print();
+        let escpos = render_receipt_to_escpos(&data);
+        assert!(!escpos.is_empty());
+    }
+
+    #[test]
+    fn test_render_cat_receipt() {
+        let dummy_img = RgbImage::new(100, 100);
+        let data = ReceiptData::new_cat(100, Some(dummy_img));
         let escpos = render_receipt_to_escpos(&data);
         assert!(!escpos.is_empty());
     }

@@ -15,6 +15,7 @@ mod printer;
 mod receipt_render;
 mod retroarch;
 mod sound;
+mod cat_fetch;
 
 use cashcode::{BillEvent, CashCode};
 use config::Config;
@@ -773,6 +774,47 @@ mod donation_handler {
                 } else {
                     warn!("⚠️  No token loaded, donation not sent to server");
                 }
+            }
+        });
+
+        app.on_print_cat_clicked({
+            let cashcode_tx = cashcode_tx.clone();
+            let cctalk_tx = cctalk_tx.clone();
+            let printer_tx = printer_tx.clone();
+            move |amount| {
+                info!("🐱 Print-a-cat clicked! Amount inserted: {} AMD", amount);
+
+                if cashcode_tx
+                    .send(bill_acceptor::CashCodeCommand::Disable)
+                    .is_err()
+                {
+                    error!("Failed to send disable command to CashCode on cat print click");
+                }
+                if cctalk_tx
+                    .send(cctalk::CoinAcceptorCommand::Disable)
+                    .is_err()
+                {
+                    error!("Failed to send disable command to ccTalk coin acceptor on cat print click");
+                }
+
+                let printer_tx = printer_tx.clone();
+                slint::spawn_local(async move {
+                    if amount > 0 {
+                        sound::play_yippee();
+                    }
+
+                    let cat_img = match cat_fetch::fetch_cat_image().await {
+                        Ok(img) => Some(img),
+                        Err(e) => {
+                            error!("❌ Failed to fetch cat image: {}", e);
+                            None
+                        }
+                    };
+
+                    let receipt_data = receipt_render::ReceiptData::new_cat(amount, cat_img);
+                    let _ = printer_tx.send(printer::PrinterCommand::PrintReceipt(receipt_data));
+                })
+                .unwrap();
             }
         });
 

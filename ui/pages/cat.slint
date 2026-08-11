@@ -1,0 +1,196 @@
+import { Button, Palette } from "std-widgets.slint";
+
+export component Cat inherits Rectangle {
+    in-out property <int> current-amount: 0;
+    in-out property <int> last-added-amount: 0;
+    in property <int> seconds-left: 180;  // inactivity countdown
+
+    callback cancel-clicked();
+    callback print-clicked(int);  // amount of inserted money
+    callback screen-tapped();     // resets inactivity timer
+
+    background: Palette.background;
+
+    // Background TouchArea to capture screen taps and reset timer
+    TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { root.screen-tapped(); }
+    }
+
+    // Internal toast state for money insertion
+    property <int> display-amount: 0;
+    property <bool> toast-active: false;
+
+    Timer {
+        interval: 16ms;
+        running: root.last-added-amount != 0 && !root.toast-active;
+        triggered => {
+            root.display-amount = root.last-added-amount;
+            root.toast-active = true;
+        }
+    }
+
+    Timer {
+        interval: 1100ms;
+        running: root.last-added-amount != 0;
+        triggered => { root.last-added-amount = 0; }
+    }
+
+    Timer {
+        interval: 600ms;
+        running: root.last-added-amount == 0 && root.toast-active;
+        triggered => { root.toast-active = false; }
+    }
+
+    VerticalLayout {
+        alignment: start;
+        padding: 32px;
+        spacing: 32px;
+
+        HorizontalLayout {
+            alignment: start;
+
+            if root.current-amount == 0: Button {
+                text: "← Cancel";
+                width: 150px;
+                height: 60px;
+                clicked => { root.cancel-clicked(); }
+            }
+
+            if root.current-amount > 0: Text {
+                text: "🔒 Cannot cancel after inserting money";
+                font-size: 16px;
+                color: Palette.foreground;
+                opacity: 0.5;
+                vertical-alignment: center;
+                height: 60px;
+            }
+        }
+
+        // Header Section
+        Text {
+            text: "I just wanna a cat!";
+            font-size: 38px;
+            font-weight: 800;
+            color: Palette.foreground;
+            horizontal-alignment: center;
+        }
+
+        // Description Section
+        Text {
+            text: "This donation will not go to rent or anywhere else, just cover paper costs and support maintainers. Thank you!";
+            font-size: 20px;
+            color: Palette.foreground;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+            opacity: 0.85;
+        }
+
+        // Spacer
+        Rectangle {
+            height: 24px;
+        }
+
+        // Inserted money display
+        VerticalLayout {
+            spacing: 16px;
+            alignment: center;
+
+            Text {
+                text: "Inserted Amount:";
+                font-size: 24px;
+                color: Palette.foreground;
+                horizontal-alignment: center;
+                opacity: 0.8;
+            }
+
+            Rectangle {
+                height: 120px;
+                clip: false;
+
+                Rectangle {
+                    width: 100%;
+                    height: 100%;
+                    border-radius: 16px;
+                    background: Palette.color-scheme == ColorScheme.dark ? #2a2a2a : #f5f5f5;
+                    border-width: 3px;
+                    border-color: root.current-amount > 0 ? #f1c40f : #cccccc;
+
+                    HorizontalLayout {
+                        alignment: center;
+
+                        Text {
+                            text: root.current-amount + " ֏";
+                            font-size: 64px;
+                            font-weight: 700;
+                            color: root.current-amount > 0 ? #f1c40f : Palette.foreground;
+                            horizontal-alignment: center;
+                        }
+                    }
+                }
+
+                // Toast overlay
+                Text {
+                    text: "+" + root.display-amount + " ֏";
+                    color: #f1c40f;
+                    font-size: 38px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                    width: parent.width;
+                    y: root.toast-active ? -90px : -20px;
+                    opacity: root.last-added-amount != 0 ? 1.0 : 0.0;
+
+                    animate opacity { duration: 500ms; }
+                    animate y { duration: 1000ms; easing: ease-in-out; }
+                }
+            }
+        }
+
+        // Spacer
+        Rectangle {
+            vertical-stretch: 1;
+        }
+
+        // Print button
+        HorizontalLayout {
+            alignment: center;
+
+            print-button := Button {
+                text: "Print! 🐱🖨️";
+                primary: true;
+                enabled: true; // Active even if 0 inserted!
+                width: 360px;
+                height: 120px;
+
+                clicked => {
+                    root.print-clicked(root.current-amount);
+                }
+            }
+        }
+
+        // Inactivity countdown warning
+        Rectangle {
+            height: 40px;
+            border-radius: 8px;
+            background: root.seconds-left <= 30 ? #ff4444.with-alpha(0.15) :
+                        root.seconds-left <= 60 ? #ff8800.with-alpha(0.12) :
+                        transparent;
+
+            Text {
+                text: root.current-amount > 0
+                    ? "⏱ Auto-approves in " + root.seconds-left + "s"
+                    : "⏱ Auto-cancels in " + root.seconds-left + "s";
+                font-size: 14px;
+                color: root.seconds-left <= 30 ? #ff4444 :
+                       root.seconds-left <= 60 ? #ff8800 :
+                       Palette.foreground;
+                opacity: root.seconds-left <= 60 ? 1.0 : 0.5;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+        }
+    }
+}
