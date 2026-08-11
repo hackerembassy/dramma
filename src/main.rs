@@ -12,6 +12,7 @@ mod error;
 mod funds;
 mod home_assistant;
 mod printer;
+mod receipt_render;
 mod retroarch;
 mod sound;
 
@@ -64,7 +65,7 @@ pub fn main() {
 
     virtual_keyboard::init(&main_window);
     autocomplete_handler::init(&main_window);
-    let _printer_tx = printer::init(config.printer_serial_port.clone());
+    let printer_tx = printer::init(config.printer_serial_port.clone());
     let cashcode_tx = bill_acceptor::init(&main_window, &config);
     let cctalk_tx = coin_acceptor::init(&main_window, &config, cashcode_tx.clone());
     fund_fetcher::init(&main_window, &config);
@@ -73,11 +74,12 @@ pub fn main() {
         log_rx,
         cashcode_tx.clone(),
         cctalk_tx.clone(),
+        printer_tx.clone(),
         config.token.clone(),
     );
-    donation_handler::init(&main_window, &config, cashcode_tx, cctalk_tx);
+    donation_handler::init(&main_window, &config, cashcode_tx, cctalk_tx, printer_tx.clone());
     home_assistant_handler::init(&main_window, &config);
-    game_handler::init(&main_window, &config);
+    game_handler::init(&main_window, &config, printer_tx);
 
     main_window.run().unwrap();
 }
@@ -619,6 +621,7 @@ mod donation_handler {
     fn spawn_inactivity_timer(
         weak: slint::Weak<MainWindow>,
         cashcode_tx: Sender<bill_acceptor::CashCodeCommand>,
+        printer_tx: Sender<printer::PrinterCommand>,
         token: Option<String>,
     ) -> slint::Timer {
         let timer = slint::Timer::default();
@@ -659,7 +662,9 @@ mod donation_handler {
                         if let Some(ref tok) = token {
                             let username = window.get_session_username().to_string();
                             let fund_id = window.get_session_fund_id();
+                            let fund_name = window.get_session_fund_name().to_string();
                             let tok = tok.clone();
+                            let printer_tx = printer_tx.clone();
                             slint::spawn_local(async move {
                                 match donation::send_donation(&tok, fund_id, &username, amount)
                                     .await
@@ -667,6 +672,19 @@ mod donation_handler {
                                     Ok(_) => {
                                         sound::play_yippee();
                                         info!("✅ Auto-approved donation sent successfully!");
+
+                                        let roles = donation::fetch_user_roles(&tok, &username)
+                                            .await
+                                            .unwrap_or_else(|_| vec!["guest".to_string()]);
+
+                                        let receipt_data = receipt_render::ReceiptData::new_donation(
+                                            username,
+                                            roles,
+                                            fund_name,
+                                            fund_id,
+                                            amount,
+                                        );
+                                        let _ = printer_tx.send(printer::PrinterCommand::PrintReceipt(receipt_data));
                                     }
                                     Err(e) => {
                                         error!("❌ Auto-approve: failed to send donation: {}", e)
@@ -693,17 +711,26 @@ mod donation_handler {
         config: &Config,
         cashcode_tx: Sender<bill_acceptor::CashCodeCommand>,
         cctalk_tx: Sender<cctalk::CoinAcceptorCommand>,
+        printer_tx: Sender<printer::PrinterCommand>,
     ) {
         // Shared timer slots — replaced on each entry to InsertMoney page or bill insertion
         // Using Rc<RefCell<>> because all callbacks run on the single Slint event-loop thread.
         let inactivity_timer: Rc<RefCell<Option<slint::Timer>>> = Rc::new(RefCell::new(None));
         let countdown_ticker: Rc<RefCell<Option<slint::Timer>>> = Rc::new(RefCell::new(None));
 
+        let app_weak = app.as_weak();
         app.on_done_clicked({
             let cashcode_tx = cashcode_tx.clone();
             let cctalk_tx = cctalk_tx.clone();
+            let printer_tx = printer_tx.clone();
             let token = config.token.clone();
+            let app_weak = app_weak.clone();
             move |username, fund_id, amount| {
+                let fund_name_str = app_weak
+                    .upgrade()
+                    .map(|w| w.get_session_fund_name().to_string())
+                    .unwrap_or_default();
+
                 info!(
                     "💰 Processing donation: {} AMD from {} to fund {}",
                     amount, username, fund_id
@@ -726,12 +753,26 @@ mod donation_handler {
                     // Send donation asynchronously using slint::spawn_local
                     let token = token.clone();
                     let username_str = username.to_string();
+                    let printer_tx = printer_tx.clone();
                     slint::spawn_local(async move {
                         match donation::send_donation(&token, fund_id, &username_str, amount).await
                         {
                             Ok(_) => {
                                 sound::play_yippee();
                                 info!("✅ Donation sent successfully!");
+
+                                let roles = donation::fetch_user_roles(&token, &username_str)
+                                    .await
+                                    .unwrap_or_else(|_| vec!["guest".to_string()]);
+
+                                let receipt_data = receipt_render::ReceiptData::new_donation(
+                                    username_str,
+                                    roles,
+                                    fund_name_str,
+                                    fund_id,
+                                    amount,
+                                );
+                                let _ = printer_tx.send(printer::PrinterCommand::PrintReceipt(receipt_data));
                             }
                             Err(e) => error!("❌ Failed to send donation: {}", e),
                         }
@@ -746,6 +787,7 @@ mod donation_handler {
         // enter-insert-money: start 3-minute inactivity timer + countdown ticker
         let weak_enter = app.as_weak();
         let cashcode_tx_enter = cashcode_tx.clone();
+        let printer_tx_enter = printer_tx.clone();
         let token_enter = config.token.clone();
         let timer_enter = inactivity_timer.clone();
         let ticker_enter = countdown_ticker.clone();
@@ -762,6 +804,7 @@ mod donation_handler {
             let timer = spawn_inactivity_timer(
                 weak_enter.clone(),
                 cashcode_tx_enter.clone(),
+                printer_tx_enter.clone(),
                 token_enter.clone(),
             );
             *timer_enter.borrow_mut() = Some(timer);
@@ -786,6 +829,7 @@ mod donation_handler {
         // activity-on-insert-money: reset both timers when a bill is inserted
         let weak_activity = app.as_weak();
         let cashcode_tx_activity = cashcode_tx.clone();
+        let printer_tx_activity = printer_tx.clone();
         let token_activity = config.token.clone();
         let timer_activity = inactivity_timer.clone();
         let ticker_activity = countdown_ticker.clone();
@@ -799,6 +843,7 @@ mod donation_handler {
             let timer = spawn_inactivity_timer(
                 weak_activity.clone(),
                 cashcode_tx_activity.clone(),
+                printer_tx_activity.clone(),
                 token_activity.clone(),
             );
             *timer_activity.borrow_mut() = Some(timer);
@@ -924,6 +969,7 @@ mod diagnostics_handler {
         log_rx: std::sync::mpsc::Receiver<diag_logger::LogLine>,
         cashcode_tx: Sender<bill_acceptor::CashCodeCommand>,
         cctalk_tx: Sender<cctalk::CoinAcceptorCommand>,
+        printer_tx: Sender<printer::PrinterCommand>,
         token: Option<String>,
     ) {
         // Build the model and hand it to the window.
@@ -1000,6 +1046,17 @@ mod diagnostics_handler {
             })
             .unwrap();
         });
+
+        let printer_tx_test = printer_tx;
+        app.on_diag_test_printer(move || {
+            info!("🖨️ Diagnostics: testing receipt printer");
+            if printer_tx_test
+                .send(printer::PrinterCommand::PrintTestReceipt)
+                .is_err()
+            {
+                error!("Failed to send PrintTestReceipt command");
+            }
+        });
     }
 }
 
@@ -1060,7 +1117,11 @@ mod game_handler {
     use slint::{Timer, TimerMode};
     use std::sync::Arc;
 
-    pub fn init(app: &MainWindow, config: &Config) {
+    pub fn init(
+        app: &MainWindow,
+        config: &Config,
+        printer_tx: Sender<printer::PrinterCommand>,
+    ) {
         // Populate game-names from config (empty list → UI uses built-in fallback)
         if !config.games.is_empty() {
             let names: Vec<slint::SharedString> = config
@@ -1081,6 +1142,7 @@ mod game_handler {
         let tick_timer: Rc<RefCell<Option<Timer>>> = Rc::new(RefCell::new(None));
 
         let weak = app.as_weak();
+        let token = config.token.clone();
 
         app.on_launch_game({
             let retroarch = retroarch.clone();
@@ -1090,6 +1152,8 @@ mod game_handler {
             let one_min_timer = one_min_timer.clone();
             let tick_timer = tick_timer.clone();
             let weak = weak.clone();
+            let printer_tx = printer_tx;
+            let token = token;
 
             move |amount, game_name| {
                 // Clear any existing timers first
@@ -1104,6 +1168,36 @@ mod game_handler {
                     "🎮 Game session: {} AMD → {} sec, game: {}",
                     amount, total_secs, game_name
                 );
+
+                let game_name_str = game_name.to_string();
+                let duration_mins = total_secs / 60;
+                let duration_rem = total_secs % 60;
+                let duration_str = if duration_rem == 0 {
+                    format!("{}m", duration_mins)
+                } else {
+                    format!("{}m {}s", duration_mins, duration_rem)
+                };
+
+                let printer_tx = printer_tx.clone();
+                let token = token.clone();
+                let _ = slint::spawn_local(async move {
+                    let roles = if let Some(ref tok) = token {
+                        donation::fetch_user_roles(tok, "guest")
+                            .await
+                            .unwrap_or_else(|_| vec!["guest".to_string()])
+                    } else {
+                        vec!["guest".to_string()]
+                    };
+
+                    let receipt_data = receipt_render::ReceiptData::new_game(
+                        "guest".to_string(),
+                        roles,
+                        game_name_str,
+                        duration_str,
+                        amount,
+                    );
+                    let _ = printer_tx.send(printer::PrinterCommand::PrintReceipt(receipt_data));
+                });
 
                 // Find the matching GameEntry (if configured), otherwise use a blank entry
                 // so RetroArch launches with its own saved config.
