@@ -1,9 +1,9 @@
 use crate::config::GameEntry;
 use log::{error, info};
-use std::process::{Child, Command};
-use std::sync::{Arc, Mutex};
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
+use std::process::{Child, Command};
+use std::sync::{Arc, Mutex};
 
 /// Manages a RetroArch subprocess for the arcade game mode.
 pub struct RetroArchManager {
@@ -101,8 +101,12 @@ impl RetroArchManager {
         *process_guard = None;
 
         // Fallback cleanup: kill any remaining retroarch processes directly (user and root)
-        let _ = Command::new("pkill").args(["-9", "-f", "retroarch"]).status();
-        let _ = Command::new("sudo").args(["pkill", "-9", "-f", "retroarch"]).status();
+        let _ = Command::new("pkill")
+            .args(["-9", "-f", "retroarch"])
+            .status();
+        let _ = Command::new("sudo")
+            .args(["pkill", "-9", "-f", "retroarch"])
+            .status();
     }
 
     /// Returns `true` if RetroArch is currently running.
@@ -117,4 +121,3 @@ impl Drop for RetroArchManager {
         self.close();
     }
 }
-

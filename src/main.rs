@@ -4,6 +4,7 @@
 slint::include_modules!();
 
 mod cashcode;
+mod cat_fetch;
 mod cctalk;
 mod config;
 mod diag_logger;
@@ -15,7 +16,6 @@ mod printer;
 mod receipt_render;
 mod retroarch;
 mod sound;
-mod cat_fetch;
 
 use cashcode::{BillEvent, CashCode};
 use config::Config;
@@ -78,7 +78,13 @@ pub fn main() {
         printer_tx.clone(),
         config.token.clone(),
     );
-    donation_handler::init(&main_window, &config, cashcode_tx, cctalk_tx, printer_tx.clone());
+    donation_handler::init(
+        &main_window,
+        &config,
+        cashcode_tx,
+        cctalk_tx,
+        printer_tx.clone(),
+    );
     home_assistant_handler::init(&main_window, &config);
     game_handler::init(&main_window, &config, printer_tx);
 
@@ -674,13 +680,12 @@ mod donation_handler {
                                         sound::play_yippee();
                                         info!("✅ Auto-approved donation sent successfully!");
 
-                                        let receipt_data = receipt_render::ReceiptData::new_donation(
-                                            username,
-                                            fund_name,
-                                            fund_id,
-                                            amount,
-                                        );
-                                        let _ = printer_tx.send(printer::PrinterCommand::PrintReceipt(receipt_data));
+                                        let receipt_data =
+                                            receipt_render::ReceiptData::new_donation(
+                                                username, fund_name, fund_id, amount,
+                                            );
+                                        let _ = printer_tx
+                                            .send(printer::PrinterCommand::Receipt(receipt_data));
                                     }
                                     Err(e) => {
                                         error!("❌ Auto-approve: failed to send donation: {}", e)
@@ -764,7 +769,8 @@ mod donation_handler {
                                         fund_id,
                                         amount,
                                     );
-                                    let _ = printer_tx.send(printer::PrinterCommand::PrintReceipt(receipt_data));
+                                    let _ = printer_tx
+                                        .send(printer::PrinterCommand::Receipt(receipt_data));
                                 }
                             }
                             Err(e) => error!("❌ Failed to send donation: {}", e),
@@ -794,7 +800,9 @@ mod donation_handler {
                     .send(cctalk::CoinAcceptorCommand::Disable)
                     .is_err()
                 {
-                    error!("Failed to send disable command to ccTalk coin acceptor on cat print click");
+                    error!(
+                        "Failed to send disable command to ccTalk coin acceptor on cat print click"
+                    );
                 }
 
                 let printer_tx = printer_tx.clone();
@@ -812,7 +820,7 @@ mod donation_handler {
                     };
 
                     let receipt_data = receipt_render::ReceiptData::new_cat(amount, cat_img);
-                    let _ = printer_tx.send(printer::PrinterCommand::PrintReceipt(receipt_data));
+                    let _ = printer_tx.send(printer::PrinterCommand::Receipt(receipt_data));
                 })
                 .unwrap();
             }
@@ -1085,7 +1093,7 @@ mod diagnostics_handler {
         app.on_diag_test_printer(move || {
             info!("🖨️ Diagnostics: testing receipt printer");
             if printer_tx_test
-                .send(printer::PrinterCommand::PrintTestReceipt)
+                .send(printer::PrinterCommand::TestReceipt)
                 .is_err()
             {
                 error!("Failed to send PrintTestReceipt command");
@@ -1151,11 +1159,7 @@ mod game_handler {
     use slint::{Timer, TimerMode};
     use std::sync::Arc;
 
-    pub fn init(
-        app: &MainWindow,
-        config: &Config,
-        printer_tx: Sender<printer::PrinterCommand>,
-    ) {
+    pub fn init(app: &MainWindow, config: &Config, printer_tx: Sender<printer::PrinterCommand>) {
         // Populate game-names from config (empty list → UI uses built-in fallback)
         if !config.games.is_empty() {
             let names: Vec<slint::SharedString> = config
@@ -1219,7 +1223,7 @@ mod game_handler {
                             duration_str,
                             amount,
                         );
-                        let _ = printer_tx.send(printer::PrinterCommand::PrintReceipt(receipt_data));
+                        let _ = printer_tx.send(printer::PrinterCommand::Receipt(receipt_data));
                     });
                 }
 

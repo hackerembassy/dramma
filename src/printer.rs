@@ -1,7 +1,7 @@
 use log::{error, info};
 use serialport::SerialPort;
 use std::io::Write;
-use std::sync::mpsc::{channel, Sender};
+use std::sync::mpsc::{Sender, channel};
 use std::thread;
 use std::time::Duration;
 
@@ -9,9 +9,9 @@ use crate::receipt_render::{self, ReceiptData};
 
 pub enum PrinterCommand {
     #[allow(dead_code)]
-    PrintRaw(Vec<u8>),
-    PrintTestReceipt,
-    PrintReceipt(ReceiptData),
+    Raw(Vec<u8>),
+    TestReceipt,
+    Receipt(ReceiptData),
 }
 
 pub struct Printer {
@@ -56,13 +56,13 @@ pub fn init(port_name: String) -> Sender<PrinterCommand> {
 
         while let Ok(cmd) = rx.recv() {
             match cmd {
-                PrinterCommand::PrintRaw(payload) => {
+                PrinterCommand::Raw(payload) => {
                     info!("Printing raw byte payload ({} bytes)", payload.len());
                     if let Err(e) = printer.print_raw(&payload) {
                         error!("Printer raw error: {}", e);
                     }
                 }
-                PrinterCommand::PrintTestReceipt => {
+                PrinterCommand::TestReceipt => {
                     info!("Printing test receipt");
                     let data = ReceiptData::new_test_print();
                     let payload = receipt_render::render_receipt_to_escpos(&data);
@@ -70,7 +70,7 @@ pub fn init(port_name: String) -> Sender<PrinterCommand> {
                         error!("Failed to print test receipt: {}", e);
                     }
                 }
-                PrinterCommand::PrintReceipt(data) => {
+                PrinterCommand::Receipt(data) => {
                     info!("Printing pre-rendered receipt for @{}", data.username);
                     let payload = receipt_render::render_receipt_to_escpos(&data);
                     if let Err(e) = printer.print_raw(&payload) {

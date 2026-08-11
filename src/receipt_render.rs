@@ -12,8 +12,14 @@ const CANVAS_WIDTH: u32 = 576; // 80mm thermal paper @ 203 DPI
 
 #[derive(Debug, Clone)]
 pub enum ReceiptKind {
-    Donation { fund_name: String, fund_id: i32 },
-    ArcadeGame { game_name: String, duration_str: String },
+    Donation {
+        fund_name: String,
+        fund_id: i32,
+    },
+    ArcadeGame {
+        game_name: String,
+        duration_str: String,
+    },
     CatReceipt,
     TestPrint,
 }
@@ -41,12 +47,7 @@ impl ReceiptData {
         }
     }
 
-    pub fn new_donation(
-        username: String,
-        fund_name: String,
-        fund_id: i32,
-        amount: i32,
-    ) -> Self {
+    pub fn new_donation(username: String, fund_name: String, fund_id: i32, amount: i32) -> Self {
         let now = Local::now();
         Self {
             kind: ReceiptKind::Donation { fund_name, fund_id },
@@ -108,7 +109,8 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
         _ => 600 + cat_h,
     };
 
-    let mut canvas: RgbImage = ImageBuffer::from_pixel(CANVAS_WIDTH, canvas_height as u32, Rgb([255, 255, 255]));
+    let mut canvas: RgbImage =
+        ImageBuffer::from_pixel(CANVAS_WIDTH, canvas_height as u32, Rgb([255, 255, 255]));
     let black = Rgb([0, 0, 0]);
 
     let mut y_cursor: i32 = 10;
@@ -116,10 +118,13 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
     // Helper: draw dithered grey line
     let draw_grey_divider = |canvas: &mut RgbImage, y: i32| {
         for x in 10..(CANVAS_WIDTH as i32 - 10) {
-            if (x + y) % 2 == 0 {
-                if x >= 0 && x < CANVAS_WIDTH as i32 && y >= 0 && y < canvas.height() as i32 {
-                    canvas.put_pixel(x as u32, y as u32, black);
-                }
+            if (x + y) % 2 == 0
+                && x >= 0
+                && x < CANVAS_WIDTH as i32
+                && y >= 0
+                && y < canvas.height() as i32
+            {
+                canvas.put_pixel(x as u32, y as u32, black);
             }
         }
     };
@@ -143,15 +148,47 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
         }
     }
 
-    draw_text_mut(&mut canvas, black, 135, y_cursor + 5, PxScale::from(36.0), &font_bold, "Hacker Embassy");
-    draw_text_mut(&mut canvas, black, 135, y_cursor + 40, PxScale::from(28.0), &font_regular, "> dramma");
+    draw_text_mut(
+        &mut canvas,
+        black,
+        135,
+        y_cursor + 5,
+        PxScale::from(36.0),
+        &font_bold,
+        "Hacker Embassy",
+    );
+    draw_text_mut(
+        &mut canvas,
+        black,
+        135,
+        y_cursor + 40,
+        PxScale::from(28.0),
+        &font_regular,
+        "> dramma",
+    );
 
     let time_str = data.timestamp.format("%H:%M:%S").to_string();
     let date_str = data.timestamp.format("%d.%m.%y").to_string();
 
     let mut time_sub: RgbImage = ImageBuffer::from_pixel(130, 55, Rgb([255, 255, 255]));
-    draw_text_mut(&mut time_sub, black, 0, 0, PxScale::from(19.0), &font_bold, &time_str);
-    draw_text_mut(&mut time_sub, black, 0, 26, PxScale::from(19.0), &font_bold, &date_str);
+    draw_text_mut(
+        &mut time_sub,
+        black,
+        0,
+        0,
+        PxScale::from(19.0),
+        &font_bold,
+        &time_str,
+    );
+    draw_text_mut(
+        &mut time_sub,
+        black,
+        0,
+        26,
+        PxScale::from(19.0),
+        &font_bold,
+        &date_str,
+    );
 
     let time_rot = image::imageops::rotate90(&time_sub);
     let (rw, rh) = time_rot.dimensions();
@@ -179,7 +216,15 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
         ReceiptKind::CatReceipt => ">>      I JUST WANNA A CAT!      <<",
         _ => ">>            RECEIPT            <<",
     };
-    draw_text_mut(&mut canvas, black, 75, y_cursor, PxScale::from(26.0), &font_bold, title_text);
+    draw_text_mut(
+        &mut canvas,
+        black,
+        75,
+        y_cursor,
+        PxScale::from(26.0),
+        &font_bold,
+        title_text,
+    );
     y_cursor += 35;
     draw_grey_divider(&mut canvas, y_cursor);
     y_cursor += 20;
@@ -192,42 +237,149 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
             } else {
                 format!("@{}", data.username)
             };
-            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(24.0), &font_bold, &handle_str);
+            draw_text_mut(
+                &mut canvas,
+                black,
+                20,
+                y_cursor,
+                PxScale::from(24.0),
+                &font_bold,
+                &handle_str,
+            );
             y_cursor += 36;
 
-            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(22.0), &font_bold, "Donated to");
+            draw_text_mut(
+                &mut canvas,
+                black,
+                20,
+                y_cursor,
+                PxScale::from(22.0),
+                &font_bold,
+                "Donated to",
+            );
             y_cursor += 32;
 
-            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(24.0), &font_bold, fund_name);
+            draw_text_mut(
+                &mut canvas,
+                black,
+                20,
+                y_cursor,
+                PxScale::from(24.0),
+                &font_bold,
+                fund_name,
+            );
             let id_str = format!("[ {} ]", fund_id);
-            draw_text_mut(&mut canvas, black, CANVAS_WIDTH as i32 - 100, y_cursor, PxScale::from(22.0), &font_bold, &id_str);
+            draw_text_mut(
+                &mut canvas,
+                black,
+                CANVAS_WIDTH as i32 - 100,
+                y_cursor,
+                PxScale::from(22.0),
+                &font_bold,
+                &id_str,
+            );
             y_cursor += 42;
         }
-        ReceiptKind::ArcadeGame { game_name, duration_str } => {
+        ReceiptKind::ArcadeGame {
+            game_name,
+            duration_str,
+        } => {
             let handle_str = if data.username.starts_with('@') {
                 data.username.clone()
             } else {
                 format!("@{}", data.username)
             };
-            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(24.0), &font_bold, &handle_str);
+            draw_text_mut(
+                &mut canvas,
+                black,
+                20,
+                y_cursor,
+                PxScale::from(24.0),
+                &font_bold,
+                &handle_str,
+            );
             y_cursor += 36;
 
-            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(22.0), &font_regular, "Played in");
-            draw_text_mut(&mut canvas, black, CANVAS_WIDTH as i32 - 200, y_cursor, PxScale::from(24.0), &font_bold, game_name);
+            draw_text_mut(
+                &mut canvas,
+                black,
+                20,
+                y_cursor,
+                PxScale::from(22.0),
+                &font_regular,
+                "Played in",
+            );
+            draw_text_mut(
+                &mut canvas,
+                black,
+                CANVAS_WIDTH as i32 - 200,
+                y_cursor,
+                PxScale::from(24.0),
+                &font_bold,
+                game_name,
+            );
             y_cursor += 34;
 
-            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(22.0), &font_regular, "For");
-            draw_text_mut(&mut canvas, black, CANVAS_WIDTH as i32 - 150, y_cursor, PxScale::from(24.0), &font_bold, duration_str);
+            draw_text_mut(
+                &mut canvas,
+                black,
+                20,
+                y_cursor,
+                PxScale::from(22.0),
+                &font_regular,
+                "For",
+            );
+            draw_text_mut(
+                &mut canvas,
+                black,
+                CANVAS_WIDTH as i32 - 150,
+                y_cursor,
+                PxScale::from(24.0),
+                &font_bold,
+                duration_str,
+            );
             y_cursor += 42;
         }
         ReceiptKind::CatReceipt => {
-            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(22.0), &font_regular, "This donation supports");
-            draw_text_mut(&mut canvas, black, 20, y_cursor + 28, PxScale::from(22.0), &font_regular, "maintainers & paper costs.");
+            draw_text_mut(
+                &mut canvas,
+                black,
+                20,
+                y_cursor,
+                PxScale::from(22.0),
+                &font_regular,
+                "This donation supports",
+            );
+            draw_text_mut(
+                &mut canvas,
+                black,
+                20,
+                y_cursor + 28,
+                PxScale::from(22.0),
+                &font_regular,
+                "maintainers & paper costs.",
+            );
             y_cursor += 65;
         }
         ReceiptKind::TestPrint => {
-            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(22.0), &font_regular, "If you can read this,");
-            draw_text_mut(&mut canvas, black, CANVAS_WIDTH as i32 - 240, y_cursor + 32, PxScale::from(22.0), &font_bold, "printer works fine.");
+            draw_text_mut(
+                &mut canvas,
+                black,
+                20,
+                y_cursor,
+                PxScale::from(22.0),
+                &font_regular,
+                "If you can read this,",
+            );
+            draw_text_mut(
+                &mut canvas,
+                black,
+                CANVAS_WIDTH as i32 - 240,
+                y_cursor + 32,
+                PxScale::from(22.0),
+                &font_bold,
+                "printer works fine.",
+            );
             y_cursor += 75;
         }
     }
@@ -254,12 +406,36 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
 
     // --- PAYMENT SECTION ---
     if !matches!(data.kind, ReceiptKind::TestPrint) {
-        draw_text_mut(&mut canvas, black, 160, y_cursor, PxScale::from(26.0), &font_bold, ">>      PAID      <<");
+        draw_text_mut(
+            &mut canvas,
+            black,
+            160,
+            y_cursor,
+            PxScale::from(26.0),
+            &font_bold,
+            ">>      PAID      <<",
+        );
         y_cursor += 35;
 
-        draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(24.0), &font_bold, "By cash");
+        draw_text_mut(
+            &mut canvas,
+            black,
+            20,
+            y_cursor,
+            PxScale::from(24.0),
+            &font_bold,
+            "By cash",
+        );
         let amount_str = format!("{} {}", data.amount, data.currency);
-        draw_text_mut(&mut canvas, black, CANVAS_WIDTH as i32 - 170, y_cursor, PxScale::from(24.0), &font_bold, &amount_str);
+        draw_text_mut(
+            &mut canvas,
+            black,
+            CANVAS_WIDTH as i32 - 170,
+            y_cursor,
+            PxScale::from(24.0),
+            &font_bold,
+            &amount_str,
+        );
         y_cursor += 42;
 
         draw_grey_divider(&mut canvas, y_cursor);
@@ -268,7 +444,8 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
 
     // --- FOOTER SECTION ---
     let _qr_size = if let Ok(qr) = QrCode::new("https://hackem.cc") {
-        let qr_img = qr.render::<image::Luma<u8>>()
+        let qr_img = qr
+            .render::<image::Luma<u8>>()
             .quiet_zone(false)
             .min_dimensions(116, 116)
             .build();
@@ -277,7 +454,11 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
         for qy in 0..qh {
             for qx in 0..qw {
                 let p = qr_img.get_pixel(qx, qy);
-                let color = if p[0] < 128 { black } else { Rgb([255, 255, 255]) };
+                let color = if p[0] < 128 {
+                    black
+                } else {
+                    Rgb([255, 255, 255])
+                };
                 let cx = 20 + qx;
                 let cy = (y_cursor as u32) + qy;
                 if cx < CANVAS_WIDTH && cy < canvas.height() {
@@ -292,10 +473,42 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
 
     // Bottom Right: Address text
     let text_x = 160;
-    draw_text_mut(&mut canvas, black, text_x, y_cursor, PxScale::from(24.0), &font_bold, "Thanks! :3");
-    draw_text_mut(&mut canvas, black, text_x, y_cursor + 30, PxScale::from(22.0), &font_regular, "Baghramyan 60");
-    draw_text_mut(&mut canvas, black, text_x, y_cursor + 58, PxScale::from(22.0), &font_regular, "Yerevan, Armenia");
-    draw_text_mut(&mut canvas, black, text_x, y_cursor + 88, PxScale::from(24.0), &font_bold, "hackem.cc");
+    draw_text_mut(
+        &mut canvas,
+        black,
+        text_x,
+        y_cursor,
+        PxScale::from(24.0),
+        &font_bold,
+        "Thanks! :3",
+    );
+    draw_text_mut(
+        &mut canvas,
+        black,
+        text_x,
+        y_cursor + 30,
+        PxScale::from(22.0),
+        &font_regular,
+        "Baghramyan 60",
+    );
+    draw_text_mut(
+        &mut canvas,
+        black,
+        text_x,
+        y_cursor + 58,
+        PxScale::from(22.0),
+        &font_regular,
+        "Yerevan, Armenia",
+    );
+    draw_text_mut(
+        &mut canvas,
+        black,
+        text_x,
+        y_cursor + 88,
+        PxScale::from(24.0),
+        &font_bold,
+        "hackem.cc",
+    );
 
     canvas
 }
@@ -331,7 +544,7 @@ pub fn render_receipt_to_escpos(data: &ReceiptData) -> Vec<u8> {
     }
 
     // Convert 1-bit monochrome image into ESC/POS GS v 0 raster command
-    let width_bytes = ((width + 7) / 8) as usize;
+    let width_bytes = width.div_ceil(8) as usize;
     let h_usize = height as usize;
 
     let mut buf = Vec::new();
@@ -388,4 +601,3 @@ mod tests {
         assert!(!escpos.is_empty());
     }
 }
-

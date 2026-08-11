@@ -48,8 +48,15 @@ pub async fn fetch_cat_image() -> Result<RgbImage, Box<dyn std::error::Error + S
     let scaled_img = if width > target_width {
         let ratio = target_width as f32 / width as f32;
         let target_height = (height as f32 * ratio) as u32;
-        info!("Resizing cat image from {}x{} to {}x{}", width, height, target_width, target_height);
-        dyn_img.resize(target_width, target_height, image::imageops::FilterType::Lanczos3)
+        info!(
+            "Resizing cat image from {}x{} to {}x{}",
+            width, height, target_width, target_height
+        );
+        dyn_img.resize(
+            target_width,
+            target_height,
+            image::imageops::FilterType::Lanczos3,
+        )
     } else {
         dyn_img
     };
