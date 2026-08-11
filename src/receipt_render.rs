@@ -97,8 +97,8 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
 
     // Dynamic height calculation
     let canvas_height = match data.kind {
-        ReceiptKind::TestPrint => 620,
-        _ => 780,
+        ReceiptKind::TestPrint => 450,
+        _ => 600,
     };
 
     let mut canvas: RgbImage = ImageBuffer::from_pixel(CANVAS_WIDTH, canvas_height, Rgb([255, 255, 255]));
@@ -118,9 +118,9 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
     };
 
     // --- 1. HEADER SECTION ---
-    // Top Left: xkem.png logo
+    // Top Left: xkem.png logo (Enlarged)
     if let Ok(logo_img) = image::load_from_memory(LOGO_BYTES) {
-        let logo_resized = logo_img.resize(90, 60, image::imageops::FilterType::Lanczos3);
+        let logo_resized = logo_img.resize(110, 80, image::imageops::FilterType::Lanczos3);
         let (lw, lh) = logo_resized.dimensions();
         for ly in 0..lh {
             for lx in 0..lw {
@@ -137,17 +137,17 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
         }
     }
 
-    // Top Center: Text headers
-    draw_text_mut(&mut canvas, black, 120, y_cursor, PxScale::from(24.0), &font_bold, "Hacker Embassy");
-    draw_text_mut(&mut canvas, black, 120, y_cursor + 28, PxScale::from(18.0), &font_regular, "> dramma");
+    // Top Center: Text headers (Enlarged)
+    draw_text_mut(&mut canvas, black, 135, y_cursor + 5, PxScale::from(30.0), &font_bold, "Hacker Embassy");
+    draw_text_mut(&mut canvas, black, 135, y_cursor + 40, PxScale::from(22.0), &font_regular, "> dramma");
 
-    // Top Right: 90° Rotated Timestamp / Date
+    // Top Right: 90° Rotated Timestamp / Date (Enlarged)
     let time_str = data.timestamp.format("%H:%M:%S").to_string();
     let date_str = data.timestamp.format("%d.%m.%Y").to_string();
 
-    let mut time_sub: RgbImage = ImageBuffer::from_pixel(110, 45, Rgb([255, 255, 255]));
-    draw_text_mut(&mut time_sub, black, 0, 0, PxScale::from(16.0), &font_bold, &time_str);
-    draw_text_mut(&mut time_sub, black, 0, 22, PxScale::from(16.0), &font_bold, &date_str);
+    let mut time_sub: RgbImage = ImageBuffer::from_pixel(130, 55, Rgb([255, 255, 255]));
+    draw_text_mut(&mut time_sub, black, 0, 0, PxScale::from(19.0), &font_bold, &time_str);
+    draw_text_mut(&mut time_sub, black, 0, 26, PxScale::from(19.0), &font_bold, &date_str);
 
     let time_rot = image::imageops::rotate90(&time_sub);
     let (rw, rh) = time_rot.dimensions();
@@ -165,7 +165,7 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
         }
     }
 
-    y_cursor += 75;
+    y_cursor += 90;
     draw_grey_divider(&mut canvas, y_cursor);
     y_cursor += 15;
 
@@ -187,24 +187,24 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
             } else {
                 format!("@{}", data.username)
             };
-            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(22.0), &font_bold, &handle_str);
-            y_cursor += 30;
+            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(24.0), &font_bold, &handle_str);
+            y_cursor += 32;
 
             let roles_str = if data.user_roles.is_empty() {
                 "roles: guest".to_string()
             } else {
                 format!("roles: {}", data.user_roles.join(", "))
             };
-            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(18.0), &font_regular, &roles_str);
-            y_cursor += 30;
+            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(20.0), &font_regular, &roles_str);
+            y_cursor += 32;
 
-            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(20.0), &font_bold, "Donated to");
-            y_cursor += 30;
+            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(22.0), &font_bold, "Donated to");
+            y_cursor += 32;
 
-            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(22.0), &font_bold, fund_name);
+            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(24.0), &font_bold, fund_name);
             let id_str = format!("[ {} ]", fund_id);
-            draw_text_mut(&mut canvas, black, CANVAS_WIDTH as i32 - 100, y_cursor, PxScale::from(20.0), &font_bold, &id_str);
-            y_cursor += 40;
+            draw_text_mut(&mut canvas, black, CANVAS_WIDTH as i32 - 100, y_cursor, PxScale::from(22.0), &font_bold, &id_str);
+            y_cursor += 42;
         }
         ReceiptKind::ArcadeGame { game_name, duration_str } => {
             let handle_str = if data.username.starts_with('@') {
@@ -212,29 +212,29 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
             } else {
                 format!("@{}", data.username)
             };
-            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(22.0), &font_bold, &handle_str);
-            y_cursor += 30;
+            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(24.0), &font_bold, &handle_str);
+            y_cursor += 32;
 
             let roles_str = if data.user_roles.is_empty() {
                 "roles: guest".to_string()
             } else {
                 format!("roles: {}", data.user_roles.join(", "))
             };
-            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(18.0), &font_regular, &roles_str);
-            y_cursor += 30;
-
-            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(20.0), &font_regular, "Played in");
-            draw_text_mut(&mut canvas, black, CANVAS_WIDTH as i32 - 200, y_cursor, PxScale::from(22.0), &font_bold, game_name);
+            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(20.0), &font_regular, &roles_str);
             y_cursor += 32;
 
-            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(20.0), &font_regular, "For");
-            draw_text_mut(&mut canvas, black, CANVAS_WIDTH as i32 - 150, y_cursor, PxScale::from(22.0), &font_bold, duration_str);
-            y_cursor += 40;
+            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(22.0), &font_regular, "Played in");
+            draw_text_mut(&mut canvas, black, CANVAS_WIDTH as i32 - 200, y_cursor, PxScale::from(24.0), &font_bold, game_name);
+            y_cursor += 34;
+
+            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(22.0), &font_regular, "For");
+            draw_text_mut(&mut canvas, black, CANVAS_WIDTH as i32 - 150, y_cursor, PxScale::from(24.0), &font_bold, duration_str);
+            y_cursor += 42;
         }
         ReceiptKind::TestPrint => {
-            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(20.0), &font_regular, "If you can read this,");
-            draw_text_mut(&mut canvas, black, CANVAS_WIDTH as i32 - 220, y_cursor + 28, PxScale::from(20.0), &font_bold, "printer works fine.");
-            y_cursor += 65;
+            draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(22.0), &font_regular, "If you can read this,");
+            draw_text_mut(&mut canvas, black, CANVAS_WIDTH as i32 - 240, y_cursor + 32, PxScale::from(22.0), &font_bold, "printer works fine.");
+            y_cursor += 75;
         }
     }
 
@@ -243,24 +243,24 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
 
     // --- 4. PAYMENT SECTION (Omitted for TestPrint) ---
     if !matches!(data.kind, ReceiptKind::TestPrint) {
-        draw_text_mut(&mut canvas, black, 160, y_cursor, PxScale::from(24.0), &font_bold, ">>      PAID      <<");
+        draw_text_mut(&mut canvas, black, 160, y_cursor, PxScale::from(26.0), &font_bold, ">>      PAID      <<");
         y_cursor += 35;
 
-        draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(22.0), &font_bold, "By cash");
+        draw_text_mut(&mut canvas, black, 20, y_cursor, PxScale::from(24.0), &font_bold, "By cash");
         let amount_str = format!("{} {}", data.amount, data.currency);
-        draw_text_mut(&mut canvas, black, CANVAS_WIDTH as i32 - 170, y_cursor, PxScale::from(22.0), &font_bold, &amount_str);
-        y_cursor += 40;
+        draw_text_mut(&mut canvas, black, CANVAS_WIDTH as i32 - 170, y_cursor, PxScale::from(24.0), &font_bold, &amount_str);
+        y_cursor += 42;
 
         draw_grey_divider(&mut canvas, y_cursor);
         y_cursor += 20;
     }
 
     // --- 5. FOOTER SECTION ---
-    // Bottom Left: QR Code
-    if let Ok(qr) = QrCode::new("https://hackem.cc") {
+    // Bottom Left: QR Code (Dimensions ~116x116)
+    let _qr_size = if let Ok(qr) = QrCode::new("https://hackem.cc") {
         let qr_img = qr.render::<image::Luma<u8>>()
             .quiet_zone(false)
-            .min_dimensions(100, 100)
+            .min_dimensions(116, 116)
             .build();
         let (qw, qh) = qr_img.dimensions();
 
@@ -275,34 +275,17 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
                 }
             }
         }
-    }
+        qh
+    } else {
+        116
+    };
 
-    // Bottom Center: Address text
-    draw_text_mut(&mut canvas, black, 135, y_cursor, PxScale::from(18.0), &font_bold, "Thanks! Your hackem ♡");
-    draw_text_mut(&mut canvas, black, 135, y_cursor + 24, PxScale::from(16.0), &font_regular, "Baghramyan 60");
-    draw_text_mut(&mut canvas, black, 135, y_cursor + 44, PxScale::from(16.0), &font_regular, "Yerevan, Armenia");
-    draw_text_mut(&mut canvas, black, 135, y_cursor + 66, PxScale::from(16.0), &font_bold, "hackem.cc");
-
-    // Bottom Right: 90° Rotated SHA Fingerprint
-    let hash_text = format!("SHA: {}", data.transaction_hash);
-    let mut hash_sub: RgbImage = ImageBuffer::from_pixel(130, 25, Rgb([255, 255, 255]));
-    draw_text_mut(&mut hash_sub, black, 0, 0, PxScale::from(14.0), &font_bold, &hash_text);
-
-    let hash_rot = image::imageops::rotate90(&hash_sub);
-    let (hw, hh) = hash_rot.dimensions();
-    let hx_start = CANVAS_WIDTH - hw - 15;
-    for hy in 0..hh {
-        for hx in 0..hw {
-            let p = hash_rot.get_pixel(hx, hy);
-            if p[0] < 200 {
-                let cx = hx_start + hx;
-                let cy = (y_cursor as u32) + hy;
-                if cx < CANVAS_WIDTH && cy < canvas.height() {
-                    canvas.put_pixel(cx, cy, *p);
-                }
-            }
-        }
-    }
+    // Bottom Right: Address text (Enlarged to span full height of QR code ~116px)
+    let text_x = 160;
+    draw_text_mut(&mut canvas, black, text_x, y_cursor, PxScale::from(22.0), &font_bold, "Thanks! :3");
+    draw_text_mut(&mut canvas, black, text_x, y_cursor + 30, PxScale::from(19.0), &font_regular, "Baghramyan 60");
+    draw_text_mut(&mut canvas, black, text_x, y_cursor + 58, PxScale::from(19.0), &font_regular, "Yerevan, Armenia");
+    draw_text_mut(&mut canvas, black, text_x, y_cursor + 88, PxScale::from(22.0), &font_bold, "hackem.cc");
 
     canvas
 }
