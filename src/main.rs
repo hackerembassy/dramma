@@ -4,6 +4,7 @@
 slint::include_modules!();
 
 mod cashcode;
+mod cashcode_driver;
 mod cat_fetch;
 mod cctalk;
 mod config;
@@ -17,7 +18,7 @@ mod receipt_render;
 mod retroarch;
 mod sound;
 
-use cashcode::{BillEvent, CashCode};
+use cashcode::BillEvent;
 use config::Config;
 use log::{error, info, warn};
 use slint::Model;
@@ -96,13 +97,7 @@ mod bill_acceptor {
     use slint::{Timer, TimerMode};
     use std::sync::mpsc::channel;
 
-    /// Commands to control the CashCode bill acceptor
-    #[derive(Debug, Clone)]
-    pub enum CashCodeCommand {
-        Enable,
-        Disable,
-        Reset,
-    }
+    pub use crate::cashcode_driver::CashCodeCommand;
 
     pub fn init(app: &MainWindow, config: &Config) -> Sender<CashCodeCommand> {
         let weak = app.as_weak();
@@ -116,7 +111,12 @@ mod bill_acceptor {
         // Start CashCode driver in a separate thread
         thread::spawn({
             let config = config.clone();
-            move || match init_cashcode(&config, event_tx, cmd_rx) {
+            move || match cashcode_driver::run(
+                &config.cashcode_serial_port,
+                &config.stats_db_path,
+                event_tx,
+                cmd_rx,
+            ) {
                 Ok(_) => info!("CashCode driver stopped"),
                 Err(e) => error!("CashCode driver error: {}", e),
             }
@@ -209,127 +209,6 @@ mod bill_acceptor {
 
         cmd_tx
     }
-}
-
-fn init_cashcode(
-    config: &Config,
-    tx: Sender<BillEvent>,
-    cmd_rx: std::sync::mpsc::Receiver<bill_acceptor::CashCodeCommand>,
-) -> Result<(), cashcode::CashCodeError> {
-    use bill_acceptor::CashCodeCommand;
-
-    info!("Initializing CashCode driver...");
-    let mut cashcode = match CashCode::new(&config.cashcode_serial_port, &config.stats_db_path) {
-        Ok(c) => c,
-        Err(e) => {
-            let _ = tx.send(BillEvent::Status(e.to_string(), 3));
-            return Err(e);
-        }
-    };
-
-    let _ = tx.send(BillEvent::Status("Resetting...".to_string(), 0));
-    info!("Resetting bill acceptor...");
-    cashcode.reset()?;
-    thread::sleep(Duration::from_secs(5));
-
-    info!("Polling for initializing status...");
-    cashcode.poll()?;
-    thread::sleep(Duration::from_millis(200));
-
-    info!("Polling for disabled status...");
-    cashcode.poll()?;
-    thread::sleep(Duration::from_millis(200));
-
-    let total = cashcode.get_total_amount().unwrap_or(0);
-    let _ = tx.send(BillEvent::Status(
-        format!("Disabled · {} ֏ total", total),
-        1,
-    ));
-
-    // Keep bill acceptor disabled until UI requests to enable it
-    info!("Bill acceptor initialized, waiting for enable command...");
-    info!("Starting polling loop...");
-    loop {
-        // Check for enable/disable commands from UI
-        while let Ok(cmd) = cmd_rx.try_recv() {
-            match cmd {
-                CashCodeCommand::Enable => {
-                    info!("📥 Enabling bill acceptor...");
-                    if let Err(e) = cashcode.enable() {
-                        error!("Failed to enable bill acceptor: {}", e);
-                        let _ = tx.send(BillEvent::Status(format!("Enable failed: {}", e), 3));
-                    } else {
-                        info!("✅ Bill acceptor enabled");
-                        let total = cashcode.get_total_amount().unwrap_or(0);
-                        let _ =
-                            tx.send(BillEvent::Status(format!("Enabled · {} ֏ total", total), 1));
-                    }
-                }
-                CashCodeCommand::Disable => {
-                    info!("📤 Disabling bill acceptor...");
-                    if let Err(e) = cashcode.disable() {
-                        error!("Failed to disable bill acceptor: {}", e);
-                    } else {
-                        info!("✅ Bill acceptor disabled");
-                        let total = cashcode.get_total_amount().unwrap_or(0);
-                        let _ = tx.send(BillEvent::Status(
-                            format!("Disabled · {} ֏ total", total),
-                            1,
-                        ));
-                    }
-                }
-                CashCodeCommand::Reset => {
-                    info!("🔄 Resetting bill acceptor from diagnostics...");
-                    let _ = tx.send(BillEvent::Status("Resetting...".to_string(), 0));
-                    if let Err(e) = cashcode.reset() {
-                        error!("Failed to reset bill acceptor: {}", e);
-                        let _ = tx.send(BillEvent::Status(format!("Reset failed: {}", e), 3));
-                    } else {
-                        info!("✅ Reset sent, waiting for device to reinitialise...");
-                        thread::sleep(Duration::from_secs(3));
-                        cashcode.poll().ok();
-                        thread::sleep(Duration::from_millis(200));
-                        cashcode.poll().ok();
-                        info!("✅ Bill acceptor re-initialised after reset");
-                        let total = cashcode.get_total_amount().unwrap_or(0);
-                        let _ = tx.send(BillEvent::Status(
-                            format!("Disabled · {} ֏ total", total),
-                            1,
-                        ));
-                    }
-                }
-            }
-        }
-
-        match cashcode.poll() {
-            Ok(Some(event)) => {
-                // Send event to UI thread
-                if tx.send(event.clone()).is_err() {
-                    error!("Failed to send event to UI thread");
-                    break;
-                }
-
-                if let BillEvent::Accepted(_nominal) = event
-                    && let Ok(total) = cashcode.get_total_amount()
-                {
-                    info!("Total collected in DB: {} dram", total);
-                    let _ = tx.send(BillEvent::Status(format!("Enabled · {} ֏ total", total), 1));
-                }
-            }
-            Ok(_none) => {
-                // No event, continue polling
-            }
-            Err(e) => {
-                error!("poll error: {}", e);
-                let _ = tx.send(BillEvent::Status(format!("Poll error: {}", e), 3));
-                thread::sleep(Duration::from_secs(1));
-            }
-        }
-
-        thread::sleep(Duration::from_millis(400));
-    }
-
-    Ok(())
 }
 
 mod coin_acceptor {

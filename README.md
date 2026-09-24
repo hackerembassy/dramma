@@ -31,6 +31,12 @@ cctalk_serial_port    = "/dev/ttyUSB0"
 stats_db_path         = "data/Stats.db"
 ```
 
+The CashCode bill acceptor automatically closes and reopens its serial port after
+an I/O failure, retrying every 5 seconds and resetting the device before resuming.
+It restores the latest enable/disable request, including requests made while
+disconnected. **Reset Bill Acceptor** in diagnostics also reopens the connection
+and leaves bill acceptance disabled until the UI requests it again.
+
 ---
 
 ## 🕹️ Setting Up Games (Arcade Mode)
@@ -116,6 +122,7 @@ main.rs
 
 src/
 ├── cashcode.rs        — CashCode serial protocol
+├── cashcode_driver.rs — CashCode reconnect and command handling
 ├── cctalk.rs          — ccTalk serial protocol
 ├── config.rs          — dramma.toml loader
 ├── retroarch.rs       — RetroArch process manager
