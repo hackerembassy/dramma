@@ -13,7 +13,10 @@ struct CatResponseItem {
 pub async fn fetch_cat_image() -> Result<RgbImage, Box<dyn std::error::Error + Send + Sync>> {
     info!("Fetching random cat info from API...");
     let request = Request::get("https://api.thecatapi.com/v1/images/search")
-        .header("User-Agent", &format!("dramma/{}", env!("CARGO_PKG_VERSION")))
+        .header(
+            "User-Agent",
+            &format!("dramma/{}", env!("CARGO_PKG_VERSION")),
+        )
         .body(())?;
 
     let mut response = isahc::send_async(request).await?;
