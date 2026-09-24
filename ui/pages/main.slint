@@ -1,15 +1,16 @@
-
 // ─── Palette ──────────────────────────────────────────────────────────────────
 global Theme {
-    out property <color> bg-top:        #0d0d1a;
-    out property <color> bg-bottom:     #12122b;
-    out property <color> card-bg:       #1c1c3a;
-    out property <color> card-border:   #2e2e60;
+    out property <color> bg-top:        #000000;
+    out property <color> bg-bottom:     #000000;
+    out property <color> card-bg:       #121212;
+    out property <color> card-border:   #333333;
     out property <color> accent-donate: #e05a77;
     out property <color> accent-hass:   #5ab8e0;
     out property <color> accent-play:   #7de05a;
-    out property <color> text-primary:  #f0eeff;
-    out property <color> text-muted:    #8888bb;
+    out property <color> accent-cat:    #f1c40f;
+    out property <color> accent-member: #8e44ad;
+    out property <color> text-primary:  #ffffff;
+    out property <color> text-muted:    #a0a0a0;
     out property <color> github-accent: #c9b8ff;
 }
 
@@ -19,6 +20,7 @@ component FeatureCard inherits Rectangle {
     in property <string> icon;
     in property <string> label;
     in property <string> description;
+    in property <bool>   enabled: true;
     callback clicked();
 
     property <float> hover-factor: 0;
@@ -28,13 +30,15 @@ component FeatureCard inherits Rectangle {
     border-radius: 18px;
     background: Theme.card-bg;
     border-width: 1.5px;
-    border-color: accent.mix(Theme.card-border, 0.35);
+    border-color: enabled ? accent.mix(Theme.card-border, 0.35) : Theme.card-border;
     drop-shadow-blur: 20px;
-    drop-shadow-color: accent.with-alpha(0.15);
+    drop-shadow-color: enabled ? accent.with-alpha(0.15) : transparent;
     drop-shadow-offset-y: 6px;
+    opacity: enabled ? 1.0 : 0.4;
 
     animate border-color { duration: 200ms; easing: ease-out; }
     animate drop-shadow-color { duration: 200ms; easing: ease-out; }
+    animate opacity { duration: 200ms; easing: ease-out; }
 
 
     VerticalLayout {
@@ -66,7 +70,7 @@ component FeatureCard inherits Rectangle {
         Rectangle {
             width: 48px;
             height: 2px;
-            background: accent.with-alpha(0.6);
+            background: enabled ? accent.with-alpha(0.6) : Theme.card-border;
             x: 0px;
         }
 
@@ -79,10 +83,10 @@ component FeatureCard inherits Rectangle {
     }
 
     TouchArea {
-        mouse-cursor: pointer;
-        clicked => { root.clicked(); }
+        mouse-cursor: enabled ? pointer : default;
+        clicked => { if enabled { root.clicked(); } }
         pointer-event(e) => {
-            if e.kind == PointerEventKind.move || e.kind == PointerEventKind.up {
+            if enabled && (e.kind == PointerEventKind.move || e.kind == PointerEventKind.up) {
                 root.hover-factor = self.has-hover ? 1.0 : 0.0;
             }
         }
@@ -94,6 +98,7 @@ export component Main inherits Rectangle {
     callback donate-clicked();
     callback home-assistant-clicked();
     callback play-clicked();
+    callback cat-clicked();
     callback secret-tapped();
 
     property <int> tap-count: 0;
@@ -103,15 +108,7 @@ export component Main inherits Rectangle {
         triggered => { root.tap-count = 0; }
     }
 
-    background: Theme.bg-top;
-
-    // Subtle radial gradient overlay in center
-    Rectangle {
-        x: 0;  y: 0;
-        width: parent.width;
-        height: parent.height;
-        background: @linear-gradient(160deg, #1a0d33 0%, #0d0d1a 40%, #0d1a2b 100%);
-    }
+    background: #000000;
 
     VerticalLayout {
         alignment: center;
@@ -175,7 +172,7 @@ export component Main inherits Rectangle {
         HorizontalLayout {
             alignment: center;
             padding-top: 12px;
-            padding-bottom: 32px;
+            padding-bottom: 24px;
 
             Text {
                 text: "Here you can:";
@@ -186,39 +183,71 @@ export component Main inherits Rectangle {
         }
 
         // ── Feature cards ───────────────────────────────────────────────────
-        HorizontalLayout {
+        VerticalLayout {
+            spacing: 20px;
             alignment: center;
-            spacing: 24px;
 
-            FeatureCard {
-                accent: Theme.accent-donate;
-                icon: "💸";
-                label: "Donate";
-                description: "Support Hacker Embassy directly.\nEvery coin counts!";
-                clicked => { root.donate-clicked(); }
+            HorizontalLayout {
+                alignment: center;
+                spacing: 24px;
+
+                FeatureCard {
+                    accent: Theme.accent-donate;
+                    icon: "💸";
+                    label: "Donate";
+                    description: "Support Hacker Embassy directly.\nEvery coin counts!";
+                    clicked => { root.donate-clicked(); }
+                }
+
+                FeatureCard {
+                    accent: Theme.accent-hass;
+                    icon: "🏠";
+                    label: "Control Space";
+                    description: "Manage lights, climate & more\nvia Home Assistant.";
+                    clicked => { root.home-assistant-clicked(); }
+                }
+
+                FeatureCard {
+                    accent: Theme.accent-play;
+                    icon: "🎮";
+                    label: "Play Games";
+                    description: "Insert coins and enjoy\nretro games on the machine!";
+                    clicked => { root.play-clicked(); }
+                }
             }
 
-            FeatureCard {
-                accent: Theme.accent-hass;
-                icon: "🏠";
-                label: "Control Space";
-                description: "Manage lights, climate & more\nvia Home Assistant.";
-                clicked => { root.home-assistant-clicked(); }
-            }
+            HorizontalLayout {
+                alignment: center;
+                spacing: 24px;
 
-            FeatureCard {
-                accent: Theme.accent-play;
-                icon: "🎮";
-                label: "Play Games";
-                description: "Insert coins and enjoy\nretro games on the machine!";
-                clicked => { root.play-clicked(); }
+                FeatureCard {
+                    accent: Theme.accent-cat;
+                    icon: "🐈";
+                    label: "Print-a-cat";
+                    description: "Get a random cat receipt!\nActive even for 0 ֏.";
+                    clicked => { root.cat-clicked(); }
+                }
+
+                FeatureCard {
+                    accent: Theme.accent-member;
+                    icon: "👤";
+                    label: "Member space";
+                    description: "Manage embassy memberships.\nWork in progress.";
+                    enabled: false;
+                }
+
+                // Spacer card so row 2 aligns under row 1 columns
+                Rectangle {
+                    width: 340px;
+                    height: 220px;
+                }
             }
         }
 
         // ── Contribute footer ───────────────────────────────────────────────
         HorizontalLayout {
             alignment: center;
-            padding-top: 36px;
+            padding-top: 16px;
             spacing: 8px;
 
             Text {

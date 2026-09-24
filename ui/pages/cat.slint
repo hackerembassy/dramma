@@ -1,35 +1,27 @@
 import { Button, Palette } from "std-widgets.slint";
 
-export component InsertMoney inherits Rectangle {
+export component Cat inherits Rectangle {
     in-out property <int> current-amount: 0;
     in-out property <int> last-added-amount: 0;
-    in property <string> username: "";
-    in property <string> fundname: "";
-    in property <int> seconds-left: 180;  // countdown updated by Rust
+    in property <int> seconds-left: 180;  // inactivity countdown
 
     callback cancel-clicked();
-    callback done-clicked(string, int, bool);  // username, amount, print_receipt
-    callback screen-tapped();  // any tap on screen resets inactivity timer
+    callback print-clicked(int);  // amount of inserted money
+    callback screen-tapped();     // resets inactivity timer
 
-    background: #000000;
+    background: Palette.background;
 
-    // Background TouchArea — catches taps on any empty area of the screen.
-    // Placed first so it renders behind the content; foreground buttons still capture their own events.
+    // Background TouchArea to capture screen taps and reset timer
     TouchArea {
         width: 100%;
         height: 100%;
         clicked => { root.screen-tapped(); }
     }
 
-    // Internal toast state.
-    // display-amount holds the last non-zero amount so the text stays correct
-    // while the toast is fading out (avoids a "+0 ֏" flash).
-    // toast-active drives y independently of last-added-amount so the rise
-    // and fade-out can be decoupled.
+    // Internal toast state for money insertion
     property <int> display-amount: 0;
     property <bool> toast-active: false;
 
-    // Phase 1 — capture amount and start rise (~1 frame after trigger)
     Timer {
         interval: 16ms;
         running: root.last-added-amount != 0 && !root.toast-active;
@@ -39,20 +31,18 @@ export component InsertMoney inherits Rectangle {
         }
     }
 
-    // Phase 2 — fade out after showing for ~1100ms
     Timer {
         interval: 1100ms;
         running: root.last-added-amount != 0;
         triggered => { root.last-added-amount = 0; }
     }
 
-    // Phase 3 — snap y back to start while invisible (600ms > opacity fade of 500ms)
     Timer {
         interval: 600ms;
         running: root.last-added-amount == 0 && root.toast-active;
         triggered => { root.toast-active = false; }
     }
-    
+
     VerticalLayout {
         alignment: start;
         padding: 32px;
@@ -65,14 +55,11 @@ export component InsertMoney inherits Rectangle {
                 text: "← Cancel";
                 width: 150px;
                 height: 60px;
-
-                clicked => {
-                    root.cancel-clicked();
-                }
+                clicked => { root.cancel-clicked(); }
             }
 
             if root.current-amount > 0: Text {
-                text: "Cannot cancel after inserting money";
+                text: "🔒 Cannot cancel after inserting money";
                 font-size: 16px;
                 color: Palette.foreground;
                 opacity: 0.5;
@@ -81,37 +68,31 @@ export component InsertMoney inherits Rectangle {
             }
         }
 
-        // header
+        // Header Section
         Text {
-            text: "Please Insert Money";
-            font-size: 36px;
-            font-weight: 700;
+            text: "I just want a cat!";
+            font-size: 38px;
+            font-weight: 800;
             color: Palette.foreground;
             horizontal-alignment: center;
         }
 
+        // Description Section
         Text {
-            text: "Donating as @" + root.username;
+            text: "This donation will not go to rent or anywhere else, just cover paper costs and support maintainers. Thank you!";
             font-size: 20px;
             color: Palette.foreground;
-            opacity: 0.7;
             horizontal-alignment: center;
+            wrap: word-wrap;
+            opacity: 0.85;
         }
 
-        Text {
-            text: "Donating to " + root.fundname;
-            font-size: 20px;
-            color: Palette.foreground;
-            opacity: 0.7;
-            horizontal-alignment: center;
-        }
-
-        // spacer
+        // Spacer
         Rectangle {
-            height: 48px;
+            height: 24px;
         }
 
-        // amount display
+        // Inserted money display
         VerticalLayout {
             spacing: 16px;
             alignment: center;
@@ -123,20 +104,18 @@ export component InsertMoney inherits Rectangle {
                 horizontal-alignment: center;
                 opacity: 0.8;
             }
-            
-            // Wrapper for the amount box and the toast overlay.
-            // clip: false so the toast can float above the box.
+
             Rectangle {
                 height: 120px;
                 clip: false;
 
-                amount-box := Rectangle {
+                Rectangle {
                     width: 100%;
                     height: 100%;
                     border-radius: 16px;
                     background: Palette.color-scheme == ColorScheme.dark ? #2a2a2a : #f5f5f5;
                     border-width: 3px;
-                    border-color: root.current-amount > 0 ? #4CAF50 : #cccccc;
+                    border-color: root.current-amount > 0 ? #f1c40f : #cccccc;
 
                     HorizontalLayout {
                         alignment: center;
@@ -145,23 +124,21 @@ export component InsertMoney inherits Rectangle {
                             text: root.current-amount + " ֏";
                             font-size: 64px;
                             font-weight: 700;
-                            color: root.current-amount > 0 ? #4CAF50 : Palette.foreground;
+                            color: root.current-amount > 0 ? #f1c40f : Palette.foreground;
                             horizontal-alignment: center;
                         }
                     }
                 }
 
-                // Toast: rises upward above the amount box then fades out.
-                toast-text := Text {
+                // Toast overlay
+                Text {
                     text: "+" + root.display-amount + " ֏";
-                    color: #4CAF50;
+                    color: #f1c40f;
                     font-size: 38px;
                     font-weight: 700;
                     horizontal-alignment: center;
                     width: parent.width;
-                    // Rise from just above the box edge to well above it.
                     y: root.toast-active ? -90px : -20px;
-                    // Fade in when amount is set; fade out when timer clears it.
                     opacity: root.last-added-amount != 0 ? 1.0 : 0.0;
 
                     animate opacity { duration: 500ms; }
@@ -170,59 +147,29 @@ export component InsertMoney inherits Rectangle {
             }
         }
 
-        // instructions
-        Text {
-            text: "Insert bills or coins into me";
-            font-size: 18px;
-            color: Palette.foreground;
-            horizontal-alignment: center;
-            opacity: 0.7;
-        }
-
-        // spacer to push button to bottom
+        // Spacer
         Rectangle {
             vertical-stretch: 1;
         }
 
-        // done buttons
+        // Print button
         HorizontalLayout {
             alignment: center;
-            spacing: 24px;
 
-            done-button := Button {
-                text: "Done";
+            print-button := Button {
+                text: "Print! 🐱🖨️";
                 primary: true;
-                enabled: root.current-amount > 0;
-                width: 320px;
-                height: 110px;
+                enabled: true; // Active even if 0 inserted!
+                width: 360px;
+                height: 120px;
 
                 clicked => {
-                    root.done-clicked(root.username, root.current-amount, false);
-                }
-            }
-
-            done-receipt-button := Button {
-                text: "Done, print receipt";
-                enabled: root.current-amount > 0;
-                width: 280px;
-                height: 110px;
-
-                clicked => {
-                    root.done-clicked(root.username, root.current-amount, true);
+                    root.print-clicked(root.current-amount);
                 }
             }
         }
 
-        // status text
-        if root.current-amount == 0 : Text {
-            text: "Done button will be enabled after inserting money";
-            font-size: 14px;
-            color: Palette.foreground;
-            horizontal-alignment: center;
-            opacity: 0.6;
-        }
-
-        // inactivity countdown warning
+        // Inactivity countdown warning
         Rectangle {
             height: 40px;
             border-radius: 8px;
@@ -232,8 +179,8 @@ export component InsertMoney inherits Rectangle {
 
             Text {
                 text: root.current-amount > 0
-                    ? "Auto-approves in " + root.seconds-left + "s"
-                    : "Auto-cancels in " + root.seconds-left + "s";
+                    ? "⏱ Auto-approves in " + root.seconds-left + "s"
+                    : "⏱ Auto-cancels in " + root.seconds-left + "s";
                 font-size: 14px;
                 color: root.seconds-left <= 30 ? #ff4444 :
                        root.seconds-left <= 60 ? #ff8800 :
