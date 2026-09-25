@@ -285,10 +285,8 @@ impl CashCode {
 
                 // check if stacker was recently removed and is now back
                 if self.stacker_removed {
-                    info!("stacker replaced, re-enabling bill acceptor...");
+                    info!("stacker replaced");
                     self.stacker_removed = false;
-                    thread::sleep(Duration::from_millis(500));
-                    self.enable()?;
                     Some(BillEvent::StackerReplaced)
                 } else {
                     None
