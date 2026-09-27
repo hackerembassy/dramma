@@ -142,11 +142,17 @@ jobs:
           chmod +x target/release/dramma
           scp target/release/dramma root@${{ env.DRAMMA_HOST }}:${{ env.REMOTE_DIR }}/dramma
           scp retroarch-kiosk.cfg root@${{ env.DRAMMA_HOST }}:${{ env.REMOTE_DIR }}/retroarch-kiosk.cfg
+          scp retroarch-core-options.cfg root@${{ env.DRAMMA_HOST }}:${{ env.REMOTE_DIR }}/retroarch-core-options.cfg
           ssh root@${{ env.DRAMMA_HOST }} \
             "chmod +x ${{ env.REMOTE_DIR }}/dramma && \
              chown ${{ env.DRAMMA_USER }}:${{ env.DRAMMA_USER }} \
-               ${{ env.REMOTE_DIR }}/dramma \
-               ${{ env.REMOTE_DIR }}/retroarch-kiosk.cfg"
+               ${{ env.REMOTE_DIR }}/dramma && \
+             chown root:root \
+               ${{ env.REMOTE_DIR }}/retroarch-kiosk.cfg \
+               ${{ env.REMOTE_DIR }}/retroarch-core-options.cfg && \
+             chmod 0444 \
+               ${{ env.REMOTE_DIR }}/retroarch-kiosk.cfg \
+               ${{ env.REMOTE_DIR }}/retroarch-core-options.cfg"
 
       - name: Deploy configuration
         run: |

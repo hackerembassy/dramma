@@ -179,6 +179,9 @@ Run RetroArch as the logged-in kiosk user. Launching it through `sudo` strips th
 desktop audio session environment and can leave a black fullscreen window.
 The included `retroarch-kiosk.cfg` pins the kiosk's detected 60.02 Hz refresh
 rate; a saved value of zero makes threaded emulation run several times too fast.
+It also loads the tracked `retroarch-core-options.cfg`, which pins Cannonball to
+its 60 FPS output with original 30/60 FPS arcade timing. Both files are deployed
+read-only so changes made through RetroArch's menu cannot alter kiosk timing.
 
 If the game boots correctly, the config is right. If RetroArch opens its menu instead of loading the game, the core or ROM path is wrong.
 
