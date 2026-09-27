@@ -1,5 +1,5 @@
 use crate::config::GameEntry;
-use log::{error, info};
+use log::{error, info, warn};
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 use std::process::{Child, Command};
@@ -13,9 +13,17 @@ pub struct RetroArchManager {
 
 impl RetroArchManager {
     pub fn new(retroarch_command: &str) -> Self {
+        let configured_command = retroarch_command.trim();
+        let retroarch_command = without_sudo(configured_command);
+        if retroarch_command != configured_command {
+            warn!(
+                "Ignoring sudo in retroarch_command so RetroArch can use the kiosk user's desktop session"
+            );
+        }
+
         Self {
             process: Arc::new(Mutex::new(None)),
-            retroarch_command: retroarch_command.to_string(),
+            retroarch_command,
         }
     }
 
@@ -133,8 +141,43 @@ impl RetroArchManager {
     }
 }
 
+fn without_sudo(command: &str) -> String {
+    let command = command.trim();
+    if command == "sudo" {
+        return "retroarch".to_string();
+    }
+    let Some(rest) = command.strip_prefix("sudo ") else {
+        return command.to_string();
+    };
+
+    let command = rest.trim_start();
+    if command.is_empty() {
+        "retroarch".to_string()
+    } else {
+        command.to_string()
+    }
+}
+
 impl Drop for RetroArchManager {
     fn drop(&mut self) {
         self.close();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::without_sudo;
+
+    #[test]
+    fn keeps_direct_retroarch_command() {
+        assert_eq!(
+            without_sudo("retroarch --appendconfig=/tmp/kiosk.cfg"),
+            "retroarch --appendconfig=/tmp/kiosk.cfg"
+        );
+    }
+
+    #[test]
+    fn strips_sudo_from_retroarch_command() {
+        assert_eq!(without_sudo("sudo retroarch"), "retroarch");
     }
 }

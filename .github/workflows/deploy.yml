@@ -141,9 +141,12 @@ jobs:
         run: |
           chmod +x target/release/dramma
           scp target/release/dramma root@${{ env.DRAMMA_HOST }}:${{ env.REMOTE_DIR }}/dramma
+          scp retroarch-kiosk.cfg root@${{ env.DRAMMA_HOST }}:${{ env.REMOTE_DIR }}/retroarch-kiosk.cfg
           ssh root@${{ env.DRAMMA_HOST }} \
             "chmod +x ${{ env.REMOTE_DIR }}/dramma && \
-             chown ${{ env.DRAMMA_USER }}:${{ env.DRAMMA_USER }} ${{ env.REMOTE_DIR }}/dramma"
+             chown ${{ env.DRAMMA_USER }}:${{ env.DRAMMA_USER }} \
+               ${{ env.REMOTE_DIR }}/dramma \
+               ${{ env.REMOTE_DIR }}/retroarch-kiosk.cfg"
 
       - name: Deploy configuration
         run: |
@@ -155,7 +158,7 @@ jobs:
           home_assistant_token = "${{ secrets.HOME_ASSISTANT_TOKEN }}"
           acceptor_restart_timeout_secs = 300
 
-          retroarch_command = "sudo retroarch"
+          retroarch_command = "retroarch --appendconfig=/home/dramma/dramma-app/retroarch-kiosk.cfg"
 
           [[games]]
           name = "Tetris"
@@ -210,14 +213,7 @@ jobs:
           X-LXQt-Need-Tray=false
           DESKTOPEOF
           ssh root@${{ env.DRAMMA_HOST }} \
-            "su - ${{ env.DRAMMA_USER }} -c 'cat > ~/.config/autostart/xhost-root.desktop'" << 'DESKTOPEOF'
-          [Desktop Entry]
-          Type=Application
-          Name=Allow sudo-launched GUI apps
-          Comment=sudo strips DISPLAY/XAUTHORITY (no env_keep, no root .Xauthority), so RetroArch launched via "sudo retroarch" can't reach the X server without this
-          Exec=xhost +SI:localuser:root
-          X-LXQt-Need-Tray=false
-          DESKTOPEOF
+            "rm -f /home/${{ env.DRAMMA_USER }}/.config/autostart/xhost-root.desktop"
 
       - name: Enable and start service
         run: |

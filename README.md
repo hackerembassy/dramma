@@ -125,7 +125,7 @@ When they hit **Launch**, dramma starts RetroArch fullscreen + kiosk and auto-cl
 Add a `[[games]]` block for each game. `name` is what shows up in the UI, `core` is the path to the `.so`, `rom` is the path to your ROM file.
 
 ```toml
-retroarch_command = "retroarch"
+retroarch_command = "retroarch --appendconfig=/home/dramma/dramma-app/retroarch-kiosk.cfg"
 
 [[games]]
 name = "🧱 Tetris"
@@ -162,11 +162,14 @@ If `[[games]]` is **not configured**, the UI shows a built-in placeholder list (
 Before trusting the machine to do it, test the exact command dramma will run:
 
 ```bash
-retroarch --fullscreen --libretro /path/to/core_libretro.so /path/to/rom
+retroarch --appendconfig=/path/to/retroarch-kiosk.cfg \
+  --fullscreen --libretro /path/to/core_libretro.so /path/to/rom
 ```
 
 Run RetroArch as the logged-in kiosk user. Launching it through `sudo` strips the
 desktop audio session environment and can leave a black fullscreen window.
+The included `retroarch-kiosk.cfg` pins the kiosk's detected 60.02 Hz refresh
+rate; a saved value of zero makes threaded emulation run several times too fast.
 
 If the game boots correctly, the config is right. If RetroArch opens its menu instead of loading the game, the core or ROM path is wrong.
 

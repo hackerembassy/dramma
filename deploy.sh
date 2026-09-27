@@ -80,8 +80,9 @@ echo "Patching binary for portable deployment (using system interpreter)..."
 
 echo "Deploying binary..."
 scp ${LOCAL_BINARY} root@${DRAMMA_HOST}:${REMOTE_DIR}/dramma
+scp retroarch-kiosk.cfg root@${DRAMMA_HOST}:${REMOTE_DIR}/retroarch-kiosk.cfg
 
-ssh root@${DRAMMA_HOST} "chown -R ${DRAMMA_USER}:${DRAMMA_USER} ${REMOTE_DIR}/lib && chmod +x ${REMOTE_DIR}/dramma"
+ssh root@${DRAMMA_HOST} "chown -R ${DRAMMA_USER}:${DRAMMA_USER} ${REMOTE_DIR}/lib ${REMOTE_DIR}/retroarch-kiosk.cfg && chmod +x ${REMOTE_DIR}/dramma"
 
 # Ensure patchelf is installed on target for the next step
 echo "Ensuring patchelf is installed on target..."
