@@ -209,6 +209,15 @@ jobs:
           Exec=systemctl --user start dramma.service
           X-LXQt-Need-Tray=false
           DESKTOPEOF
+          ssh root@${{ env.DRAMMA_HOST }} \
+            "su - ${{ env.DRAMMA_USER }} -c 'cat > ~/.config/autostart/xhost-root.desktop'" << 'DESKTOPEOF'
+          [Desktop Entry]
+          Type=Application
+          Name=Allow sudo-launched GUI apps
+          Comment=sudo strips DISPLAY/XAUTHORITY (no env_keep, no root .Xauthority), so RetroArch launched via "sudo retroarch" can't reach the X server without this
+          Exec=xhost +SI:localuser:root
+          X-LXQt-Need-Tray=false
+          DESKTOPEOF
 
       - name: Enable and start service
         run: |
