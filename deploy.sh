@@ -148,14 +148,8 @@ Name=Dramma Kiosk
 Exec=systemctl --user start dramma.service
 X-LXQt-Need-Tray=false
 DESKTOPEOF
-ssh root@${DRAMMA_HOST} "su - ${DRAMMA_USER} -c 'cat > ~/.config/autostart/xhost-root.desktop'" << 'DESKTOPEOF'
-[Desktop Entry]
-Type=Application
-Name=Allow sudo-launched GUI apps
-Comment=sudo strips DISPLAY/XAUTHORITY (no env_keep, no root .Xauthority), so RetroArch launched via "sudo retroarch" can't reach the X server without this
-Exec=xhost +SI:localuser:root
-X-LXQt-Need-Tray=false
-DESKTOPEOF
+# RetroArch runs as the kiosk user and no longer needs root access to the X server.
+ssh root@${DRAMMA_HOST} "rm -f /home/${DRAMMA_USER}/.config/autostart/xhost-root.desktop"
 ssh root@${DRAMMA_HOST} "su - ${DRAMMA_USER} -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user restart dramma.service'"
 echo ""
 echo "✅ Deployment complete!"
