@@ -169,6 +169,11 @@ jobs:
           name = "DOOM"
           core = "/etc/retroarch/cores/prboom_libretro.so"
           rom  = "/home/dramma/roms/doom.wad"
+
+          [[games]]
+          name = "OutRun"
+          core = "/etc/retroarch/cores/cannonball_libretro.so"
+          rom  = "/home/dramma/retroarch/retroarch/system/cannonball/CannonBall.game"
           EOF
           ssh root@${{ env.DRAMMA_HOST }} \
             "chown ${{ env.DRAMMA_USER }}:${{ env.DRAMMA_USER }} ${{ env.REMOTE_DIR }}/.config/dramma.toml"

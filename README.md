@@ -148,6 +148,11 @@ core = "/etc/retroarch/cores/prboom_libretro.so"
 rom  = "/home/dramma/roms/doom.wad"
 
 [[games]]
+name = "🏎️ OutRun"
+core = "/etc/retroarch/cores/cannonball_libretro.so"
+rom  = "/home/dramma/retroarch/retroarch/system/cannonball/CannonBall.game"
+
+[[games]]
 name = "👊 Street Fighter II"
 core = "/etc/retroarch/cores/fbneo_libretro.so"
 rom  = "/home/dramma/roms/sf2.zip"
@@ -156,6 +161,10 @@ rom  = "/home/dramma/roms/sf2.zip"
 If `[[games]]` is **not configured**, the UI shows a built-in placeholder list (same names, no actual cores/ROMs). RetroArch will still launch but will open its own menu — not useful in production.
 
 `rom` must be an actual IWAD (`file` should report "doom main IWAD data", not "doom patch PWAD data") — the shareware `doom1.wad` works fine. The PrBoom core also needs its own `prboom.wad` (a separate engine-resource file, unrelated to the game WAD despite the confusingly similar name) in RetroArch's `system_directory` — without it the core won't load at all.
+
+OutRun uses the Cannonball core. Place the extracted OutRun Revision B ROM files
+beside an empty `CannonBall.game` file and configure that `.game` file as the
+content path; Cannonball uses it to locate the adjacent ROM data.
 
 ### Test it manually first
 
