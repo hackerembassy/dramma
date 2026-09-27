@@ -48,8 +48,11 @@ While either CashCode or ccTalk is initializing or unavailable, the kiosk shows
 Payments stop, and the payment page and inserted amount are retained in memory
 until both acceptors recover. Inactivity timers pause during the outage.
 Tap the construction image **5 times** to access the usual diagnostics panel.
-Home Assistant's browser is closed while unavailable; an active game is ended
-so the issue page is visible.
+**This skips the `diagnostics_password` gate** (unlike the same gesture on the
+main page) — temporary, until the virtual keyboard's password-reentry bug is
+fixed; anyone at the machine can reach diagnostics while it's showing this
+screen. Home Assistant's browser is closed while unavailable; an active game
+is ended so the issue page is visible.
 
 The drivers keep reconnecting. If either acceptor remains unavailable for
 `acceptor_restart_timeout_secs` (5 minutes by default), the watchdog requests a

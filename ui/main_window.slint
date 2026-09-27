@@ -68,7 +68,11 @@ export component MainWindow inherits Window {
     callback open-diagnostics();
     open-diagnostics => {
         root.diagnostics-return-page = root.current-page;
-        root.current-page = root.diagnostics-password == "" ? Page.Diagnostics : Page.DiagnosticsAuth;
+        // Skip the password gate when opened from the technical-issue/maintenance
+        // screen: the machine is already visibly out of service, and the virtual
+        // keyboard there is currently unreliable. TODO: reinstate once fixed.
+        root.current-page = (root.diagnostics-password == "" || root.showing-technical-issue)
+            ? Page.Diagnostics : Page.DiagnosticsAuth;
     }
     callback return-from-diagnostics();
     return-from-diagnostics => {
@@ -100,6 +104,9 @@ export component MainWindow inherits Window {
     /// Password required to enter Diagnostics, set once from Rust config at
     /// startup. Empty string means no password is configured — gate skipped.
     in-out property <string> diagnostics-password: "";
+    /// True while the password gate (DiagnosticsAuth) is showing, as opposed
+    /// to having reached the Diagnostics panel itself.
+    out property <bool> on-diagnostics-auth-page: current-page == Page.DiagnosticsAuth;
     in-out property <[LogEntry]> diag-logs: [];
     in-out property <LogEntry> diag-bill-status: { level: 0, text: "Initializing..." };
     in-out property <LogEntry> diag-coin-status: { level: 0, text: "Initializing..." };

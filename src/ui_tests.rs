@@ -84,6 +84,40 @@ fn outage_blocks_payments_preserves_credit_and_keeps_diagnostics_accessible() {
 }
 
 #[test]
+fn maintenance_screen_skips_password_gate_but_main_page_does_not() {
+    let adapter = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
+    slint::platform::set_platform(Box::new(TestPlatform(adapter.clone()))).unwrap();
+    let app = MainWindow::new().unwrap();
+    adapter.set_size(slint::PhysicalSize::new(1280, 1024));
+    app.show().unwrap();
+
+    app.set_diagnostics_password("secret".into());
+
+    // Healthy + on Main: opening diagnostics still requires the password.
+    app.invoke_acceptor_health_changed(true);
+    app.invoke_open_diagnostics();
+    let _ = app.window().take_snapshot();
+    assert!(
+        app.get_on_diagnostics_auth_page(),
+        "normal entry should still be password-gated"
+    );
+    app.invoke_return_from_diagnostics();
+    let _ = app.window().take_snapshot();
+
+    // Unavailable (technical-issue/maintenance screen showing): the password
+    // gate is skipped and diagnostics opens directly.
+    app.invoke_acceptor_health_changed(false);
+    assert!(app.get_showing_technical_issue());
+    app.invoke_open_diagnostics();
+    let _ = app.window().take_snapshot();
+    assert!(
+        !app.get_on_diagnostics_auth_page(),
+        "maintenance-screen entry should skip the password gate"
+    );
+    assert!(!app.get_showing_technical_issue());
+}
+
+#[test]
 fn diagnostics_auth_page_reopens_on_repeat_entry() {
     // Covers the page-transition/re-instantiation half of a reported bug
     // (password screen's virtual keyboard not reappearing after Back, then
