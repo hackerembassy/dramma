@@ -2,12 +2,22 @@
 
 use log::error;
 use serde::Serialize;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
 const STALE_AFTER: Duration = Duration::from_secs(30);
 const REBOOT_RETRY: Duration = Duration::from_secs(60);
+/// Consecutive reboots that didn't lead to a single successful poll before
+/// automatic rebooting gives up; the fault is presumably not fixable by
+/// restarting and needs a human. Survives process restarts via a small file
+/// (see `load_reboot_streak`/`save_reboot_streak`), since a reboot wipes
+/// this struct's own in-memory state along with everything else.
+const MAX_REBOOT_ATTEMPTS: u32 = 3;
+/// Default path for the persisted reboot streak; relative to the working
+/// directory the service runs from, alongside `data/Stats.db`.
+pub const DEFAULT_REBOOT_STATE_PATH: &str = "data/reboot_watchdog_state";
 
 #[derive(Clone, Copy)]
 pub enum Acceptor {
@@ -38,6 +48,7 @@ struct State {
     reboot_requested: bool,
     reboot_error: Option<String>,
     maintenance_since: Option<Instant>,
+    reboot_streak: u32,
 }
 
 #[derive(Clone)]
@@ -74,11 +85,29 @@ impl HealthSnapshot {
 }
 
 impl Health {
+    /// Kept for tests, which don't care about surviving a real reboot.
+    /// Production code uses `new_with_reboot_streak` instead.
+    #[allow(dead_code)]
     pub fn new(restart_after: Duration) -> Self {
         Self::new_at(restart_after, Instant::now())
     }
 
+    /// `initial_reboot_streak` should come from `load_reboot_streak`, since
+    /// this struct's own state doesn't survive the process restarts a
+    /// reboot causes.
+    pub fn new_with_reboot_streak(restart_after: Duration, initial_reboot_streak: u32) -> Self {
+        Self::new_at_with_reboot_streak(restart_after, Instant::now(), initial_reboot_streak)
+    }
+
     fn new_at(restart_after: Duration, now: Instant) -> Self {
+        Self::new_at_with_reboot_streak(restart_after, now, 0)
+    }
+
+    fn new_at_with_reboot_streak(
+        restart_after: Duration,
+        now: Instant,
+        initial_reboot_streak: u32,
+    ) -> Self {
         Self {
             state: Arc::new(Mutex::new(State {
                 devices: std::array::from_fn(|_| DeviceState {
@@ -90,6 +119,7 @@ impl Health {
                 reboot_requested: false,
                 reboot_error: None,
                 maintenance_since: None,
+                reboot_streak: initial_reboot_streak,
             })),
             restart_after,
         }
@@ -100,6 +130,10 @@ impl Health {
             health: self.clone(),
             device,
         }
+    }
+
+    pub fn reboot_streak(&self) -> u32 {
+        self.state.lock().unwrap().reboot_streak
     }
 
     /// Manually forces the machine unhealthy, independent of acceptor state.
@@ -149,6 +183,17 @@ impl Health {
                 message: message.clone(),
                 unavailable_for_secs: 0,
             });
+        } else if state.reboot_streak >= MAX_REBOOT_ATTEMPTS
+            && state.devices.iter().any(|device| device.error.is_some())
+        {
+            errors.push(HealthError {
+                component: "reboot",
+                message: format!(
+                    "Automatic reboot disabled after {MAX_REBOOT_ATTEMPTS} attempts didn't \
+                     resolve the issue; manual intervention required"
+                ),
+                unavailable_for_secs: 0,
+            });
         }
         if let Some(since) = state.maintenance_since {
             errors.push(HealthError {
@@ -189,6 +234,7 @@ impl Health {
             Self::expire_stale(&mut state, now);
             if self.restart_after.is_zero()
                 || state.reboot_requested
+                || state.reboot_streak >= MAX_REBOOT_ATTEMPTS
                 || state
                     .last_reboot_attempt
                     .is_some_and(|last| now.saturating_duration_since(last) < REBOOT_RETRY)
@@ -201,6 +247,7 @@ impl Health {
                 return;
             }
             state.last_reboot_attempt = Some(now);
+            state.reboot_streak += 1;
         }
 
         error!(
@@ -243,6 +290,7 @@ impl DeviceHealth {
 
     fn update(&self, error: Option<String>, now: Instant) {
         let mut state = self.health.state.lock().unwrap();
+        let recovered = error.is_none();
         let device = &mut state.devices[self.device as usize];
         if error.is_some() {
             // Retrying/opening/resetting must not restart the outage timer.
@@ -252,6 +300,11 @@ impl DeviceHealth {
             device.last_response = Some(now);
         }
         device.error = error;
+        if recovered {
+            // A successful poll is evidence the last reboot (if any) helped;
+            // give the next outage the full retry budget again.
+            state.reboot_streak = 0;
+        }
         if state.devices.iter().all(|device| device.error.is_none()) {
             state.reboot_error = None;
         }
@@ -298,6 +351,26 @@ fn reboot_computer() -> Result<(), String> {
     }
     #[cfg(not(target_os = "linux"))]
     Err("Automatic reboot is only supported on Linux".into())
+}
+
+/// Reads the reboot streak persisted by `save_reboot_streak`, defaulting to
+/// 0 if the file is missing, unreadable, or corrupt (e.g. first-ever boot).
+pub fn load_reboot_streak(path: &Path) -> u32 {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|contents| contents.trim().parse().ok())
+        .unwrap_or(0)
+}
+
+/// Persists the reboot streak so it survives the process restart a reboot
+/// causes. Best-effort: a write failure is logged, not fatal.
+pub fn save_reboot_streak(path: &Path, streak: u32) {
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Err(message) = std::fs::write(path, streak.to_string()) {
+        error!("Failed to persist reboot watchdog state to {path:?}: {message}");
+    }
 }
 
 #[cfg(test)]
@@ -469,5 +542,78 @@ mod tests {
                 .snapshot_at(now + Duration::from_secs(20))
                 .restart_requested
         );
+    }
+
+    #[test]
+    fn stops_rebooting_after_max_attempts_without_recovery() {
+        // Each "boot" is a fresh Health instance carrying forward only the
+        // persisted reboot streak, matching how main.rs seeds it after an
+        // actual OS restart wipes everything else in memory. The acceptor
+        // never recovers across any of these simulated boots.
+        let mut streak = 0;
+        for attempt in 1..=MAX_REBOOT_ATTEMPTS {
+            let now = Instant::now();
+            let health = Health::new_at_with_reboot_streak(Duration::from_secs(10), now, streak);
+            let calls = Cell::new(0);
+            health.watchdog_tick(now + Duration::from_secs(11), || {
+                calls.set(calls.get() + 1);
+                Ok(())
+            });
+            assert_eq!(calls.get(), 1, "boot {attempt} should still reboot");
+            streak = health.reboot_streak();
+            assert_eq!(streak, attempt);
+        }
+
+        // One more boot, still broken, past the limit: no further reboot,
+        // and the snapshot says why.
+        let now = Instant::now();
+        let health = Health::new_at_with_reboot_streak(Duration::from_secs(10), now, streak);
+        health.watchdog_tick(now + Duration::from_secs(11), || {
+            panic!("should have given up rebooting after too many failed attempts")
+        });
+        assert!(
+            health
+                .snapshot_at(now + Duration::from_secs(11))
+                .errors
+                .iter()
+                .any(|error| error.component == "reboot" && error.message.contains("disabled"))
+        );
+    }
+
+    #[test]
+    fn recovery_resets_the_reboot_streak() {
+        let now = Instant::now();
+        let health =
+            Health::new_at_with_reboot_streak(Duration::from_secs(10), now, MAX_REBOOT_ATTEMPTS);
+
+        healthy(&health, now);
+        assert_eq!(health.reboot_streak(), 0);
+
+        // A fresh outage after recovery gets the full retry budget again.
+        health
+            .device(Acceptor::CcTalk)
+            .update(Some("broken again".into()), now);
+        let calls = Cell::new(0);
+        health.watchdog_tick(now + Duration::from_secs(11), || {
+            calls.set(calls.get() + 1);
+            Ok(())
+        });
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
+    fn reboot_streak_persistence_round_trips() {
+        let path = std::env::temp_dir().join(format!(
+            "dramma-test-reboot-streak-{:?}-{}",
+            thread::current().id(),
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(load_reboot_streak(&path), 0, "missing file defaults to 0");
+        save_reboot_streak(&path, 2);
+        assert_eq!(load_reboot_streak(&path), 2);
+
+        let _ = std::fs::remove_file(&path);
     }
 }

@@ -27,6 +27,7 @@ use health::{Acceptor, DeviceHealth, Health};
 use log::{error, info, warn};
 use slint::Model;
 use std::cell::RefCell;
+use std::path::Path;
 use std::rc::Rc;
 use std::sync::mpsc::Sender;
 use std::thread;
@@ -38,11 +39,6 @@ pub fn main() {
     info!("Starting :3");
 
     sound::init();
-
-    // Test
-    for _ in 0..5 {
-        sound::play_yippee();
-    }
 
     // Load config
     let config = match Config::load() {
@@ -56,7 +52,13 @@ pub fn main() {
         }
     };
 
-    let health = Health::new(Duration::from_secs(config.acceptor_restart_timeout_secs));
+    // Loaded from disk since a prior reboot wiped any in-memory record of
+    // how many times we've already tried and failed to fix this by restarting.
+    let reboot_streak = health::load_reboot_streak(Path::new(health::DEFAULT_REBOOT_STATE_PATH));
+    let health = Health::new_with_reboot_streak(
+        Duration::from_secs(config.acceptor_restart_timeout_secs),
+        reboot_streak,
+    );
 
     let main_window = MainWindow::new().unwrap();
 
@@ -1019,6 +1021,7 @@ mod health_handler {
 
         let timer = slint::Timer::default();
         let mut last_available = None;
+        let mut last_reboot_streak = health.reboot_streak();
         timer.start(
             slint::TimerMode::Repeated,
             Duration::from_millis(100),
@@ -1040,6 +1043,17 @@ mod health_handler {
                             }
                         });
                     }
+                }
+
+                // Persist so a future reboot (or crash) knows how many
+                // consecutive attempts have already failed to fix this.
+                let reboot_streak = health.reboot_streak();
+                if reboot_streak != last_reboot_streak {
+                    health::save_reboot_streak(
+                        Path::new(health::DEFAULT_REBOOT_STATE_PATH),
+                        reboot_streak,
+                    );
+                    last_reboot_streak = reboot_streak;
                 }
             },
         );

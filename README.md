@@ -61,6 +61,16 @@ acceptor's outage timer; reconnect attempts do not reset it. A worker with no
 successful poll for 30 seconds is also considered unavailable. A failed reboot
 command is reported in the health response and retried once per minute.
 
+If 3 consecutive reboots in a row don't lead to a single successful poll,
+automatic rebooting stops — the fault is presumably hardware, not something a
+restart fixes, and looping forever just means longer, more frequent outages.
+The health response reports this ("Automatic reboot disabled... manual
+intervention required") instead of the usual acceptor error, so the
+Home Assistant sensor and its automations still surface it. This streak is
+tracked in `data/reboot_watchdog_state` (survives reboots since the process's
+own memory doesn't) and resets the moment either acceptor has a successful
+poll — delete that file to reset it manually.
+
 Both deployment methods install a sudoers rule allowing the kiosk user only
 `/usr/bin/systemctl --no-block reboot`. For an existing installation, run the
 permission installer as root before starting the updated binary:
