@@ -109,10 +109,27 @@ impl RetroArchManager {
             .status();
     }
 
-    /// Returns `true` if RetroArch is currently running.
-    #[allow(dead_code)]
+    /// Returns `true` if RetroArch was launched and hasn't exited on its own
+    /// (crash or otherwise) since. Actually polls the process rather than
+    /// just checking launch bookkeeping, so a crash is detected here rather
+    /// than only once the full paid session timer elapses.
     pub fn is_running(&self) -> bool {
-        self.process.lock().unwrap().is_some()
+        let mut process_guard = self.process.lock().unwrap();
+        let Some(child) = process_guard.as_mut() else {
+            return false;
+        };
+        match child.try_wait() {
+            Ok(None) => true,
+            Ok(Some(status)) => {
+                info!("🎮 RetroArch exited on its own: {status}");
+                *process_guard = None;
+                false
+            }
+            Err(e) => {
+                error!("Failed to check RetroArch process status: {}", e);
+                true
+            }
+        }
     }
 }
 

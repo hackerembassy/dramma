@@ -1229,14 +1229,33 @@ mod game_handler {
                 }
 
                 // ── 1-second countdown ticker ──────────────────────────────────
+                // Also polls RetroArch: if it has crashed or exited early, end the
+                // session immediately instead of leaving a frozen/glitched screen
+                // up for the rest of the time the player paid for.
                 {
                     let weak_tick = weak.clone();
+                    let retroarch_tick = retroarch.clone();
+                    let session_tick = session_timer.clone();
+                    let two_tick = two_min_timer.clone();
+                    let one_tick = one_min_timer.clone();
                     let ticker = Timer::default();
                     ticker.start(TimerMode::Repeated, Duration::from_secs(1), move || {
                         if let Some(w) = weak_tick.upgrade() {
                             let cur = w.get_game_seconds_left();
                             if cur > 0 {
-                                w.set_game_seconds_left(cur - 1);
+                                if retroarch_tick.is_running() {
+                                    w.set_game_seconds_left(cur - 1);
+                                } else {
+                                    info!(
+                                        "🎮 RetroArch exited unexpectedly — ending game session early"
+                                    );
+                                    retroarch_tick.close();
+                                    *session_tick.borrow_mut() = None;
+                                    *two_tick.borrow_mut() = None;
+                                    *one_tick.borrow_mut() = None;
+                                    w.set_game_seconds_left(0);
+                                    w.invoke_game_time_expired();
+                                }
                             }
                         }
                     });
