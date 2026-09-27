@@ -1,0 +1,56 @@
+export component TechnicalIssue inherits Rectangle {
+    callback secret-tapped();
+    property <int> tap-count: 0;
+    background: #000000;
+
+    Timer {
+        interval: 3s;
+        running: root.tap-count > 0;
+        triggered => { root.tap-count = 0; }
+    }
+
+    VerticalLayout {
+        alignment: center;
+        padding: 48px;
+        spacing: 24px;
+
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: 320px;
+                height: 320px;
+                Image {
+                    source: @image-url("../assets/under_construction.png");
+                    image-fit: contain;
+                    image-rendering: pixelated;
+                }
+                // Keep the existing five-tap diagnostics gesture available.
+                TouchArea {
+                    clicked => {
+                        root.tap-count += 1;
+                        if root.tap-count >= 5 {
+                            root.tap-count = 0;
+                            root.secret-tapped();
+                        }
+                    }
+                }
+            }
+        }
+
+        Text {
+            text: "We've encountered a technical issue";
+            color: #ffffff;
+            font-size: 38px;
+            font-weight: 700;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+        Text {
+            text: "Please give us a moment while we reconnect.";
+            color: #a0a0a0;
+            font-size: 22px;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+    }
+}

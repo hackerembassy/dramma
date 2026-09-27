@@ -19,6 +19,7 @@ env:
 #   DRAMMA_SSH_KEY       - Private SSH key whose public key is in root@dramma.lan's authorized_keys
 #   DRAMMA_HOST_KEY      - Output of: ssh-keyscan dramma.lan (prevents MITM)
 #   TS_AUTHKEY           - TailScale auth key
+#   HOME_ASSISTANT_TOKEN - Long-lived access token used to push sensor.dramma_health
 #
 # If you run a self-hosted runner on your local network instead of using Tailscale,
 # remove the "Connect to Tailscale" step and change runs-on to: [self-hosted, linux]
@@ -151,6 +152,8 @@ jobs:
           diagnostics_password = "${{ secrets.DIAGNOSTICS_PASSWORD }}"
           cashcode_serial_port = "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0"
           cctalk_serial_port = "/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0"
+          home_assistant_token = "${{ secrets.HOME_ASSISTANT_TOKEN }}"
+          acceptor_restart_timeout_secs = 300
 
           retroarch_command = "sudo retroarch"
 
@@ -166,6 +169,10 @@ jobs:
           EOF
           ssh root@${{ env.DRAMMA_HOST }} \
             "chown ${{ env.DRAMMA_USER }}:${{ env.DRAMMA_USER }} ${{ env.REMOTE_DIR }}/.config/dramma.toml"
+
+      - name: Allow watchdog to request a system reboot
+        run: |
+          ssh root@${{ env.DRAMMA_HOST }} "sh -s -- '${{ env.DRAMMA_USER }}'" < scripts/install-reboot-permission.sh
 
       - name: Set up systemd service
         run: |

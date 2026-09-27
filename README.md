@@ -24,11 +24,15 @@ Create `.config/dramma.toml` next to the binary (or in the working directory you
 token = "your-bearer-token" # For Bot donates
 diagnostics_password = "your-password" # Optional — gates the diagnostics panel (and donation wall) if set
 
+home_assistant_token = "your-long-lived-access-token" # Optional — enables the sensor.dramma_health push described below
+
 # Optional overrides (these are the defaults):
 home_assistant_url    = "https://ha.hackem.cc/web-dramma/0?BrowserID=dramma"
+home_assistant_api_url = "https://ha.hackem.cc"
 cashcode_serial_port  = "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0"
 cctalk_serial_port    = "/dev/ttyUSB0"
 stats_db_path         = "data/Stats.db"
+acceptor_restart_timeout_secs = 300 # 0 disables automatic computer reboots
 ```
 
 The CashCode bill acceptor automatically closes and reopens its serial port after
@@ -36,6 +40,54 @@ an I/O failure, retrying every 5 seconds and resetting the device before resumin
 It restores the latest enable/disable request, including requests made while
 disconnected. **Reset Bill Acceptor** in diagnostics also reopens the connection
 and leaves bill acceptance disabled until the UI requests it again.
+
+## Acceptor health and automatic recovery
+
+While either CashCode or ccTalk is initializing or unavailable, the kiosk shows
+"We've encountered a technical issue" with `ui/assets/under_construction.png`.
+Payments stop, and the payment page and inserted amount are retained in memory
+until both acceptors recover. Inactivity timers pause during the outage.
+Tap the construction image **5 times** to access the usual diagnostics panel.
+Home Assistant's browser is closed while unavailable; an active game is ended
+so the issue page is visible.
+
+The drivers keep reconnecting. If either acceptor remains unavailable for
+`acceptor_restart_timeout_secs` (5 minutes by default), the watchdog requests a
+Linux computer reboot. A successful poll after initialization clears that
+acceptor's outage timer; reconnect attempts do not reset it. A worker with no
+successful poll for 30 seconds is also considered unavailable. A failed reboot
+command is reported in the health response and retried once per minute.
+
+Both deployment methods install a sudoers rule allowing the kiosk user only
+`/usr/bin/systemctl --no-block reboot`. For an existing installation, run the
+permission installer as root before starting the updated binary:
+
+```bash
+ssh root@dramma.lan 'sh -s -- dramma' < scripts/install-reboot-permission.sh
+```
+
+When `home_assistant_token` is set, acceptor health is pushed into Home Assistant
+as `sensor.dramma_health` (created automatically on first push) whenever it
+changes — `state` is `ok` or `error`, with `errors`, `restart_in_secs` and
+`restart_requested` as attributes. This monitors the acceptors and reboot
+watchdog; it does not probe the donation backend or receipt printer. Because
+it's push-based, a fully hung or crashed process can't report its own failure —
+pair it with a Home Assistant automation on the entity's `last_updated` (or
+`availability`/timeout template) if you need to detect total silence, not just
+acceptor errors.
+
+Example attributes on failure:
+
+```json
+{
+  "friendly_name": "Dramma Health",
+  "errors": [
+    {"component": "cashcode", "message": "serial port error: No such file or directory", "unavailable_for_secs": 42}
+  ],
+  "restart_in_secs": 258,
+  "restart_requested": false
+}
+```
 
 ---
 

@@ -82,13 +82,13 @@ impl RetroArchManager {
             {
                 // Kill process group to ensure child processes (e.g. retroarch spawned via sudo) receive SIGKILL
                 let _ = Command::new("sudo")
-                    .args(["kill", "-9", &format!("-{}", pid)])
+                    .args(["-n", "kill", "-9", &format!("-{}", pid)])
                     .status();
                 let _ = Command::new("kill")
                     .args(["-9", &format!("-{}", pid)])
                     .status();
                 let _ = Command::new("sudo")
-                    .args(["kill", "-9", &pid.to_string()])
+                    .args(["-n", "kill", "-9", &pid.to_string()])
                     .status();
             }
 
@@ -105,7 +105,7 @@ impl RetroArchManager {
             .args(["-9", "-f", "retroarch"])
             .status();
         let _ = Command::new("sudo")
-            .args(["pkill", "-9", "-f", "retroarch"])
+            .args(["-n", "pkill", "-9", "-f", "retroarch"])
             .status();
     }
 

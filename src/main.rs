@@ -12,14 +12,18 @@ mod diag_logger;
 mod donation;
 mod error;
 mod funds;
+mod health;
 mod home_assistant;
 mod printer;
 mod receipt_render;
 mod retroarch;
 mod sound;
+#[cfg(test)]
+mod ui_tests;
 
 use cashcode::BillEvent;
 use config::Config;
+use health::{Acceptor, DeviceHealth, Health};
 use log::{error, info, warn};
 use slint::Model;
 use std::cell::RefCell;
@@ -52,6 +56,8 @@ pub fn main() {
         }
     };
 
+    let health = Health::new(Duration::from_secs(config.acceptor_restart_timeout_secs));
+
     let main_window = MainWindow::new().unwrap();
 
     // Enable fullscreen mode for kiosk deployment
@@ -68,8 +74,8 @@ pub fn main() {
     virtual_keyboard::init(&main_window);
     autocomplete_handler::init(&main_window);
     let printer_tx = printer::init(config.printer_serial_port.clone());
-    let cashcode_tx = bill_acceptor::init(&main_window, &config);
-    let cctalk_tx = coin_acceptor::init(&main_window, &config, cashcode_tx.clone());
+    let cashcode_tx = bill_acceptor::init(&main_window, &config, health.device(Acceptor::CashCode));
+    let cctalk_tx = coin_acceptor::init(&main_window, &config, cashcode_tx.clone(), &health);
     fund_fetcher::init(&main_window, &config);
     diagnostics_handler::init(
         &main_window,
@@ -78,6 +84,7 @@ pub fn main() {
         cctalk_tx.clone(),
         printer_tx.clone(),
         config.token.clone(),
+        health.clone(),
     );
     donation_handler::init(
         &main_window,
@@ -88,6 +95,7 @@ pub fn main() {
     );
     home_assistant_handler::init(&main_window, &config);
     game_handler::init(&main_window, &config, printer_tx);
+    health_handler::init(&main_window, health, &config);
 
     main_window.run().unwrap();
 }
@@ -99,7 +107,11 @@ mod bill_acceptor {
 
     pub use crate::cashcode_driver::CashCodeCommand;
 
-    pub fn init(app: &MainWindow, config: &Config) -> Sender<CashCodeCommand> {
+    pub fn init(
+        app: &MainWindow,
+        config: &Config,
+        health: DeviceHealth,
+    ) -> Sender<CashCodeCommand> {
         let weak = app.as_weak();
 
         // Create a channel for bill events (from CashCode to UI)
@@ -116,26 +128,10 @@ mod bill_acceptor {
                 &config.stats_db_path,
                 event_tx,
                 cmd_rx,
+                health,
             ) {
                 Ok(_) => info!("CashCode driver stopped"),
                 Err(e) => error!("CashCode driver error: {}", e),
-            }
-        });
-
-        // Set up callbacks for page transitions
-        let cmd_tx_start = cmd_tx.clone();
-        app.on_start_accepting_money(move || {
-            info!("📥 UI: Start accepting money");
-            if cmd_tx_start.send(CashCodeCommand::Enable).is_err() {
-                error!("Failed to send enable command to CashCode");
-            }
-        });
-
-        let cmd_tx_stop = cmd_tx.clone();
-        app.on_stop_accepting_money(move || {
-            info!("📤 UI: Stop accepting money");
-            if cmd_tx_stop.send(CashCodeCommand::Disable).is_err() {
-                error!("Failed to send disable command to CashCode");
             }
         });
 
@@ -221,6 +217,7 @@ mod coin_acceptor {
         app: &MainWindow,
         config: &Config,
         cashcode_tx: Sender<bill_acceptor::CashCodeCommand>,
+        health: &Health,
     ) -> Sender<CoinAcceptorCommand> {
         let weak = app.as_weak();
 
@@ -230,13 +227,19 @@ mod coin_acceptor {
         thread::spawn({
             let serial_port = config.cctalk_serial_port.clone();
             let coin_overrides = config.cctalk_coin_overrides.clone();
-            move || cctalk::run(serial_port, event_tx, cmd_rx, coin_overrides)
+            let device_health = health.device(Acceptor::CcTalk);
+            move || cctalk::run(serial_port, event_tx, cmd_rx, coin_overrides, device_health)
         });
 
-        // Override start/stop callbacks to drive both bill and coin acceptors.
+        // Drive both acceptors together and block new payments during an outage.
         let cmd_tx_start = cmd_tx.clone();
         let cashcode_tx_start = cashcode_tx.clone();
+        let health_start = health.clone();
         app.on_start_accepting_money(move || {
+            if !health_start.snapshot().healthy() {
+                warn!("Cannot accept money while an acceptor is unavailable");
+                return;
+            }
             info!("📥 UI: Start accepting money (bills + coins)");
             if cashcode_tx_start
                 .send(bill_acceptor::CashCodeCommand::Enable)
@@ -755,6 +758,12 @@ mod donation_handler {
         let timer_activity = inactivity_timer.clone();
         let ticker_activity = countdown_ticker.clone();
         app.on_activity_on_insert_money(move || {
+            if !weak_activity
+                .upgrade()
+                .is_some_and(|w| w.get_on_insert_money_page())
+            {
+                return;
+            }
             info!("⏱️  Bill inserted — resetting inactivity timer");
             // Reset countdown display
             if let Some(w) = weak_activity.upgrade() {
@@ -892,6 +901,7 @@ mod diagnostics_handler {
         cctalk_tx: Sender<cctalk::CoinAcceptorCommand>,
         printer_tx: Sender<printer::PrinterCommand>,
         token: Option<String>,
+        health: Health,
     ) {
         // Build the model and hand it to the window.
         let log_model = std::rc::Rc::new(VecModel::<LogEntry>::default());
@@ -978,6 +988,62 @@ mod diagnostics_handler {
                 error!("Failed to send PrintTestReceipt command");
             }
         });
+
+        app.on_diag_toggle_maintenance_mode(move |enabled| {
+            info!(
+                "🛠️ Diagnostics: maintenance mode {}",
+                if enabled { "enabled" } else { "disabled" }
+            );
+            health.set_maintenance_mode(enabled);
+        });
+    }
+}
+
+mod health_handler {
+    use super::*;
+    use crate::home_assistant;
+
+    pub fn init(app: &MainWindow, health: Health, config: &Config) {
+        // Drivers report independently of the UI so the Home Assistant sensor and
+        // watchdog still detect failed or stalled workers.
+        health.start_watchdog();
+        let weak = app.as_weak();
+
+        let ha_target = config
+            .home_assistant_token
+            .clone()
+            .map(|token| (config.home_assistant_api_url.clone(), token));
+        if ha_target.is_none() {
+            warn!("⚠️  No Home Assistant token configured, health sensor push disabled");
+        }
+
+        let timer = slint::Timer::default();
+        let mut last_available = None;
+        timer.start(
+            slint::TimerMode::Repeated,
+            Duration::from_millis(100),
+            move || {
+                let snapshot = health.snapshot();
+                let available = snapshot.healthy();
+                if last_available != Some(available) {
+                    if let Some(window) = weak.upgrade() {
+                        window.invoke_acceptor_health_changed(available);
+                    }
+                    last_available = Some(available);
+
+                    if let Some((api_url, token)) = ha_target.clone() {
+                        let _ = slint::spawn_local(async move {
+                            if let Err(e) =
+                                home_assistant::push_health(&api_url, &token, &snapshot).await
+                            {
+                                error!("Failed to push health sensor to Home Assistant: {}", e);
+                            }
+                        });
+                    }
+                }
+            },
+        );
+        std::mem::forget(timer);
     }
 }
 
@@ -1059,6 +1125,26 @@ mod game_handler {
         let tick_timer: Rc<RefCell<Option<Timer>>> = Rc::new(RefCell::new(None));
 
         let weak = app.as_weak();
+
+        // External fullscreen applications must not cover the issue page.
+        app.on_stop_game_for_technical_issue({
+            let retroarch = retroarch.clone();
+            let session_timer = session_timer.clone();
+            let two_min_timer = two_min_timer.clone();
+            let one_min_timer = one_min_timer.clone();
+            let tick_timer = tick_timer.clone();
+            let weak = weak.clone();
+            move || {
+                retroarch.close();
+                *session_timer.borrow_mut() = None;
+                *two_min_timer.borrow_mut() = None;
+                *one_min_timer.borrow_mut() = None;
+                *tick_timer.borrow_mut() = None;
+                if let Some(window) = weak.upgrade() {
+                    window.set_game_seconds_left(0);
+                }
+            }
+        });
 
         app.on_launch_game({
             let retroarch = retroarch.clone();

@@ -24,7 +24,9 @@ const STATUS_DISABLED: u8 = 0x19;
 const STATUS_IDLING: u8 = 0x14;
 const STATUS_ACCEPTING: u8 = 0x15;
 const STATUS_STACKING: u8 = 0x17;
-#[allow(dead_code)]
+const STATUS_RETURNING: u8 = 0x18;
+const STATUS_HOLDING: u8 = 0x1A;
+const STATUS_BUSY: u8 = 0x1B;
 const STATUS_STACKER_FULL: u8 = 0x41;
 const STATUS_STACKER_REMOVED: u8 = 0x42;
 const STATUS_JAM_IN_ACCEPTOR: u8 = 0x43;
@@ -32,6 +34,7 @@ const STATUS_JAM_IN_STACKER: u8 = 0x44;
 const STATUS_FAILURE: u8 = 0x47;
 const STATUS_REJECTED: u8 = 0x1C;
 const STATUS_BILL_STACKED: u8 = 0x81;
+const STATUS_BILL_RETURNED: u8 = 0x82;
 
 // bill nominals (index-based)
 const NOMINAL_1000: u8 = 0x00;
@@ -63,7 +66,6 @@ pub enum CashCodeError {
     #[error("database error: {0}")]
     Database(#[from] rusqlite::Error),
 
-    #[allow(dead_code)]
     #[error("invalid response: {0}")]
     InvalidResponse(String),
 
@@ -118,7 +120,44 @@ pub enum BillEvent {
 pub struct CashCode {
     port: Box<dyn SerialPort>,
     stacker_removed: bool,
+    availability_error: Option<String>,
     db: Arc<Mutex<Connection>>,
+}
+
+/// Read one complete CCNET frame. Silence, truncated frames and electrical
+/// noise are failures, not successful empty polls that could keep health green.
+fn read_packet(port: &mut impl Read) -> Result<Vec<u8>, CashCodeError> {
+    let mut header = [0; 3];
+    port.read_exact(&mut header)?;
+    if header[0..2] != [0x02, 0x03] || header[2] < 6 {
+        return Err(CashCodeError::InvalidResponse(format!(
+            "Invalid header: {header:02X?}"
+        )));
+    }
+    let mut packet = vec![0; header[2] as usize];
+    packet[..3].copy_from_slice(&header);
+    port.read_exact(&mut packet[3..])?;
+    let payload_end = packet.len() - 2;
+    let expected_crc = u16::from_le_bytes([packet[payload_end], packet[payload_end + 1]]);
+    if packet_crc(&packet[..payload_end]) != expected_crc {
+        return Err(CashCodeError::InvalidResponse("Checksum mismatch".into()));
+    }
+    Ok(packet)
+}
+
+fn packet_crc(bytes: &[u8]) -> u16 {
+    let mut crc = 0u16;
+    for byte in bytes {
+        crc ^= u16::from(*byte);
+        for _ in 0..8 {
+            crc = if crc & 1 != 0 {
+                (crc >> 1) ^ 0x8408
+            } else {
+                crc >> 1
+            };
+        }
+    }
+    crc
 }
 
 impl CashCode {
@@ -138,6 +177,7 @@ impl CashCode {
         Ok(CashCode {
             port,
             stacker_removed: false,
+            availability_error: Some("Initializing bill acceptor".into()),
             db: Arc::new(Mutex::new(db)),
         })
     }
@@ -169,16 +209,12 @@ impl CashCode {
     }
 
     fn read_response(&mut self) -> Result<Vec<u8>, CashCodeError> {
-        let mut buffer = vec![0u8; 256];
         thread::sleep(Duration::from_millis(20));
+        read_packet(&mut self.port)
+    }
 
-        let bytes_available = self.port.bytes_to_read()? as usize;
-        if bytes_available == 0 {
-            return Ok(vec![]);
-        }
-
-        let bytes_read = self.port.read(&mut buffer[..bytes_available])?;
-        Ok(buffer[..bytes_read].to_vec())
+    pub fn availability_error(&self) -> Option<&str> {
+        self.availability_error.as_deref()
     }
 
     fn clear_buffer(&mut self) -> Result<(), CashCodeError> {
@@ -251,24 +287,26 @@ impl CashCode {
 
         let response = self.read_response()?;
 
-        if response.len() < 2 {
-            return Ok(None);
-        }
-
-        // check for CashCode protocol header
-        if response[0] != 0x02 || response[1] != 0x03 {
-            if !response.is_empty() {
-                debug!("unknown message received: {:02X?}", response);
-            }
-            return Ok(None);
-        }
-
-        if response.len() < 4 {
-            return Ok(None);
-        }
-
-        let _length = response[2];
         let status = response[3];
+        if matches!(
+            status,
+            STATUS_FAILURE | STATUS_REJECTED | STATUS_BILL_STACKED
+        ) && response.len() < 7
+        {
+            return Err(CashCodeError::InvalidResponse("Missing status data".into()));
+        }
+        self.availability_error = match status {
+            STATUS_INITIALIZING => Some("Bill acceptor is initializing".into()),
+            STATUS_STACKER_FULL => Some("Stacker full".into()),
+            STATUS_STACKER_REMOVED => Some("Stacker removed".into()),
+            STATUS_JAM_IN_ACCEPTOR => Some("Bill jam in acceptor".into()),
+            STATUS_JAM_IN_STACKER => Some("Bill jam in stacker".into()),
+            STATUS_FAILURE => Some(format!("Device failure 0x{:02X}", response[4])),
+            STATUS_DISABLED | STATUS_IDLING | STATUS_ACCEPTING | STATUS_STACKING
+            | STATUS_RETURNING | STATUS_HOLDING | STATUS_BUSY | STATUS_BILL_RETURNED
+            | STATUS_REJECTED | STATUS_BILL_STACKED => None,
+            _ => Some(format!("Unexpected device status 0x{status:02X}")),
+        };
 
         let event = match status {
             STATUS_INITIALIZING => {
@@ -293,7 +331,8 @@ impl CashCode {
                 }
             }
 
-            STATUS_IDLING | STATUS_ACCEPTING | STATUS_STACKING => {
+            STATUS_IDLING | STATUS_ACCEPTING | STATUS_STACKING | STATUS_RETURNING
+            | STATUS_HOLDING | STATUS_BUSY | STATUS_BILL_RETURNED => {
                 self.send_ack()?;
                 self.clear_buffer()?;
                 None
@@ -312,6 +351,12 @@ impl CashCode {
                 }
             }
 
+            STATUS_STACKER_FULL => {
+                self.send_ack()?;
+                self.clear_buffer()?;
+                Some(BillEvent::Error("Stacker full".into()))
+            }
+
             STATUS_JAM_IN_STACKER => {
                 self.send_ack()?;
                 error!("ERR: bill jam in stacker");
@@ -327,9 +372,6 @@ impl CashCode {
             }
 
             STATUS_FAILURE => {
-                if response.len() < 5 {
-                    return Ok(None);
-                }
                 let error_code = response[4];
                 self.send_ack()?;
                 self.clear_buffer()?;
@@ -347,9 +389,6 @@ impl CashCode {
             }
 
             STATUS_REJECTED => {
-                if response.len() < 5 {
-                    return Ok(None);
-                }
                 let reject_code = response[4];
                 self.send_ack()?;
                 self.clear_buffer()?;
@@ -370,9 +409,6 @@ impl CashCode {
             }
 
             STATUS_BILL_STACKED => {
-                if response.len() < 5 {
-                    return Ok(None);
-                }
                 let nominal_code = response[4];
                 self.send_ack()?;
                 self.clear_buffer()?;
@@ -438,5 +474,64 @@ impl CashCode {
             .unwrap_or(0);
 
         Ok(total)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{self, Cursor};
+
+    #[test]
+    fn protocol_fixtures_have_valid_checksums() {
+        for packet in [
+            ACK,
+            COMMAND_POLL,
+            COMMAND_RESET,
+            COMMAND_ENABLE,
+            COMMAND_DISABLE,
+        ] {
+            assert_eq!(read_packet(&mut Cursor::new(packet)).unwrap(), packet);
+        }
+    }
+
+    #[test]
+    fn empty_truncated_corrupted_and_invalid_length_frames_fail() {
+        for data in [
+            vec![],
+            ACK[..4].to_vec(),
+            vec![2, 3, 0],
+            vec![2, 3, 6, 0, 0, 0],
+            vec![0, 0, 6],
+        ] {
+            assert!(read_packet(&mut Cursor::new(data)).is_err());
+        }
+    }
+
+    #[test]
+    fn reads_fragmented_frames_without_consuming_the_next_frame() {
+        struct Fragmented(Cursor<Vec<u8>>);
+        impl Read for Fragmented {
+            fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+                let count = buffer.len().min(1);
+                self.0.read(&mut buffer[..count])
+            }
+        }
+        let mut port = Fragmented(Cursor::new([ACK, ACK].concat()));
+        assert_eq!(read_packet(&mut port).unwrap(), ACK);
+        assert_eq!(read_packet(&mut port).unwrap(), ACK);
+    }
+
+    #[test]
+    fn serial_timeout_is_not_a_successful_poll() {
+        struct Silent;
+        impl Read for Silent {
+            fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+                Err(io::ErrorKind::TimedOut.into())
+            }
+        }
+        assert!(
+            matches!(read_packet(&mut Silent), Err(CashCodeError::Io(error)) if error.kind() == io::ErrorKind::TimedOut)
+        );
     }
 }

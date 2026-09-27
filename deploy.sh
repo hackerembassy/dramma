@@ -106,6 +106,9 @@ if [ -f "data/Stats.db" ]; then
 fi
 
 # Create systemd user service on remote machine
+echo "Allowing the kiosk watchdog to request a system reboot..."
+ssh root@${DRAMMA_HOST} "sh -s -- '${DRAMMA_USER}'" < scripts/install-reboot-permission.sh
+
 echo "Setting up systemd service..."
 ssh root@${DRAMMA_HOST} "su - ${DRAMMA_USER} -c 'mkdir -p ~/.config/systemd/user'"
 
