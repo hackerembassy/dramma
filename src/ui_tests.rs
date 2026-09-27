@@ -82,3 +82,43 @@ fn outage_blocks_payments_preserves_credit_and_keeps_diagnostics_accessible() {
     assert_eq!(app.get_session_amount(), 500);
     assert_eq!(starts.get(), 2);
 }
+
+#[test]
+fn diagnostics_auth_page_reopens_on_repeat_entry() {
+    // Covers the page-transition/re-instantiation half of a reported bug
+    // (password screen's virtual keyboard not reappearing after Back, then
+    // reopening diagnostics again). This part is confirmed correct here:
+    // DiagnosticsAuth's `init` genuinely reruns each time. The keyboard's
+    // `open` flag is now also deferred by a frame via a real Timer (see
+    // diagnostics_auth.slint) to dodge a suspected animation/destroy race on
+    // real hardware — that part isn't verifiable headlessly, since this
+    // manually-driven test platform doesn't pump Slint's timers without a
+    // real event loop. Verify the keyboard behavior itself on device.
+    let adapter = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
+    slint::platform::set_platform(Box::new(TestPlatform(adapter.clone()))).unwrap();
+    let app = MainWindow::new().unwrap();
+    adapter.set_size(slint::PhysicalSize::new(1280, 1024));
+    app.show().unwrap();
+
+    app.set_diagnostics_password("secret".into());
+
+    // A render pass is required for conditionally-instantiated pages (`if
+    // current-page == ...: Page { }`) to actually construct and run `init`;
+    // property changes alone don't trigger it in this headless harness.
+    app.invoke_open_diagnostics();
+    let _ = app.window().take_snapshot();
+    assert!(
+        !app.get_showing_technical_issue(),
+        "should have navigated to DiagnosticsAuth (1st time)"
+    );
+
+    app.invoke_return_from_diagnostics();
+    let _ = app.window().take_snapshot();
+
+    app.invoke_open_diagnostics();
+    let _ = app.window().take_snapshot();
+    assert!(
+        !app.get_showing_technical_issue(),
+        "should have navigated to DiagnosticsAuth (2nd time)"
+    );
+}

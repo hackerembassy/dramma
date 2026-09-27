@@ -15,7 +15,6 @@ export component Donate inherits Rectangle {
     callback fetch-usernames();
 
     init => {
-        VirtualKeyboardHandler.open = true;
         username-input.set-input-focus();
 
         // fetch funds from backend
@@ -25,6 +24,16 @@ export component Donate inherits Rectangle {
         // select first fund by default if available
         if (root.fund-items.length > 0) {
             root.selected-fund-index = 0;
+        }
+    }
+
+    // Deferred by a frame: see the matching comment in diagnostics_auth.slint.
+    keyboard-open-timer := Timer {
+        interval: 16ms;
+        running: true;
+        triggered => {
+            self.running = false;
+            VirtualKeyboardHandler.open = true;
         }
     }
 
