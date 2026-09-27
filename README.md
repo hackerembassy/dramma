@@ -82,8 +82,13 @@ ssh root@dramma.lan 'sh -s -- dramma' < scripts/install-reboot-permission.sh
 When `home_assistant_token` is set, acceptor health is pushed into Home Assistant
 as `sensor.dramma_health` (created automatically on first push) whenever it
 changes — `state` is `ok` or `error`, with `errors`, `restart_in_secs` and
-`restart_requested` as attributes. This monitors the acceptors and reboot
-watchdog; it does not probe the donation backend or receipt printer. Because
+`restart_requested` as attributes. Recovery pushes immediately, but an error
+only pushes if it's still unhealthy 15 seconds later — every startup briefly
+reports both acceptors as "Initializing" before their first poll, which isn't
+a real fault and would otherwise page someone on every deploy or reboot. The
+kiosk's own screen isn't affected by this delay; it still reacts instantly.
+This monitors the acceptors and reboot watchdog; it does not probe the
+donation backend or receipt printer. Because
 it's push-based, a fully hung or crashed process can't report its own failure —
 pair it with a Home Assistant automation on the entity's `last_updated` (or
 `availability`/timeout template) if you need to detect total silence, not just
@@ -139,7 +144,7 @@ rom  = "/home/dramma/roms/sonic.md"
 
 [[games]]
 name = "🔫 DOOM"
-core = "/etc/retroarch/cores/dosbox_pure_libretro.so"
+core = "/etc/retroarch/cores/prboom_libretro.so"
 rom  = "/home/dramma/roms/doom.wad"
 
 [[games]]
@@ -149,6 +154,8 @@ rom  = "/home/dramma/roms/sf2.zip"
 ```
 
 If `[[games]]` is **not configured**, the UI shows a built-in placeholder list (same names, no actual cores/ROMs). RetroArch will still launch but will open its own menu — not useful in production.
+
+`rom` must be an actual IWAD (`file` should report "doom main IWAD data", not "doom patch PWAD data") — the shareware `doom1.wad` works fine. The PrBoom core also needs its own `prboom.wad` (a separate engine-resource file, unrelated to the game WAD despite the confusingly similar name) in RetroArch's `system_directory` — without it the core won't load at all.
 
 ### Test it manually first
 

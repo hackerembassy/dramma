@@ -576,8 +576,10 @@ pub fn render_receipt_to_escpos(data: &ReceiptData) -> Vec<u8> {
         }
     }
 
-    // Feed lines & Cut sequence
-    buf.extend_from_slice(b"\n\n\n\n\x1D\x56\x00");
+    // Feed lines & partial-cut sequence (GS V 1) — leaves a small connecting
+    // point so the receipt stays on the roll until the user tears it off,
+    // instead of a full cut (GS V 0) dropping it immediately.
+    buf.extend_from_slice(b"\n\n\n\n\x1D\x56\x01");
 
     buf
 }

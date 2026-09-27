@@ -164,7 +164,7 @@ jobs:
 
           [[games]]
           name = "DOOM"
-          core = "/etc/retroarch/cores/dosbox_pure_libretro.so"
+          core = "/etc/retroarch/cores/prboom_libretro.so"
           rom  = "/home/dramma/roms/doom.wad"
           EOF
           ssh root@${{ env.DRAMMA_HOST }} \

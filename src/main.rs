@@ -31,7 +31,7 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::mpsc::Sender;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub fn main() {
     let log_rx = diag_logger::init();
@@ -1005,6 +1005,13 @@ mod health_handler {
     use super::*;
     use crate::home_assistant;
 
+    /// Every startup (so every deploy or reboot) briefly reports both
+    /// acceptors as "Initializing" before their first successful poll —
+    /// that's not a real fault. Only push an error to Home Assistant if it's
+    /// still unhealthy after this long; the local kiosk screen still reacts
+    /// instantly regardless, since that check is separate from this one.
+    const HA_ERROR_GRACE_PERIOD: Duration = Duration::from_secs(15);
+
     pub fn init(app: &MainWindow, health: Health, config: &Config) {
         // Drivers report independently of the UI so the Home Assistant sensor and
         // watchdog still detect failed or stalled workers.
@@ -1022,6 +1029,8 @@ mod health_handler {
         let timer = slint::Timer::default();
         let mut last_available = None;
         let mut last_reboot_streak = health.reboot_streak();
+        let mut last_pushed_available: Option<bool> = None;
+        let mut unhealthy_since: Option<Instant> = None;
         timer.start(
             slint::TimerMode::Repeated,
             Duration::from_millis(100),
@@ -1033,7 +1042,19 @@ mod health_handler {
                         window.invoke_acceptor_health_changed(available);
                     }
                     last_available = Some(available);
+                }
 
+                // Home Assistant push: debounced separately from the local UI
+                // above, so a normal few-second startup blip never alerts.
+                let should_push = if available {
+                    unhealthy_since = None;
+                    last_pushed_available != Some(true)
+                } else {
+                    let since = *unhealthy_since.get_or_insert_with(Instant::now);
+                    since.elapsed() >= HA_ERROR_GRACE_PERIOD && last_pushed_available != Some(false)
+                };
+                if should_push {
+                    last_pushed_available = Some(available);
                     if let Some((api_url, token)) = ha_target.clone() {
                         let _ = slint::spawn_local(async move {
                             if let Err(e) =
