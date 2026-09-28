@@ -1,6 +1,7 @@
 //! CashCode connection lifecycle, separate from the UI and serial protocol.
 
 use crate::cashcode::{BillEvent, CashCode, CashCodeError};
+use crate::health::DeviceHealth;
 use log::{error, info};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::thread;
@@ -85,6 +86,9 @@ trait Device {
     fn set_enabled(&mut self, enabled: bool) -> Result<(), CashCodeError>;
     fn poll(&mut self) -> Result<Option<BillEvent>, CashCodeError>;
     fn total_amount(&self) -> Result<i32, CashCodeError>;
+    fn availability_error(&self) -> Option<&str> {
+        None
+    }
 }
 
 impl Device for CashCode {
@@ -107,6 +111,10 @@ impl Device for CashCode {
     fn total_amount(&self) -> Result<i32, CashCodeError> {
         self.get_total_amount()
     }
+
+    fn availability_error(&self) -> Option<&str> {
+        self.availability_error()
+    }
 }
 
 pub fn run(
@@ -114,12 +122,15 @@ pub fn run(
     db_path: &str,
     events: Sender<BillEvent>,
     commands: Receiver<CashCodeCommand>,
+    health: DeviceHealth,
 ) -> Result<(), CashCodeError> {
+    let _guard = health.worker_guard();
     run_driver(
         || CashCode::new(port_path, db_path),
         events,
         commands,
         Timing::default(),
+        &health,
     )
 }
 
@@ -128,6 +139,7 @@ fn run_driver<D: Device>(
     events: Sender<BillEvent>,
     commands: Receiver<CashCodeCommand>,
     timing: Timing,
+    health: &DeviceHealth,
 ) -> Result<(), CashCodeError> {
     let mut state = ControlState::default();
     loop {
@@ -145,11 +157,24 @@ fn run_driver<D: Device>(
 
         // The session owns the device, so its failed port is closed before
         // waiting or opening a new handle (serial ports are opened exclusively).
-        match run_session(&mut connect, &events, &commands, &mut state, &timing) {
+        match run_session(
+            &mut connect,
+            &events,
+            &commands,
+            &mut state,
+            &timing,
+            health,
+        ) {
             Ok(SessionEnd::Shutdown) => return Ok(()),
             Ok(SessionEnd::Reset) => continue,
             Err(error) => {
-                if !matches!(error, CashCodeError::Io(_) | CashCodeError::SerialPort(_)) {
+                health.unavailable(error.to_string());
+                if !matches!(
+                    error,
+                    CashCodeError::Io(_)
+                        | CashCodeError::SerialPort(_)
+                        | CashCodeError::InvalidResponse(_)
+                ) {
                     let _ = events.send(BillEvent::Status(error.to_string(), 3));
                     return Err(error);
                 }
@@ -200,6 +225,7 @@ fn run_session<D: Device>(
     commands: &Receiver<CashCodeCommand>,
     state: &mut ControlState,
     timing: &Timing,
+    health: &DeviceHealth,
 ) -> Result<SessionEnd, CashCodeError> {
     let mut device = connect()?;
     if events
@@ -228,6 +254,7 @@ fn run_session<D: Device>(
             return Ok(SessionEnd::Shutdown);
         }
         if state.reset_requested {
+            health.unavailable("Resetting bill acceptor");
             return Ok(SessionEnd::Reset);
         }
         if applied_enabled != Some(state.enabled) {
@@ -242,7 +269,13 @@ fn run_session<D: Device>(
             }
         }
 
-        if let Some(event) = device.poll()? {
+        let event = device.poll()?;
+        if let Some(error) = device.availability_error() {
+            health.unavailable(error);
+        } else {
+            health.ready();
+        }
+        if let Some(event) = event {
             let accepted = matches!(event, BillEvent::Accepted(_));
             if matches!(event, BillEvent::StackerReplaced) {
                 // Reapply the UI's intent instead of unconditionally enabling.
@@ -414,6 +447,7 @@ mod tests {
                 initialization_poll: Duration::ZERO,
                 poll: Duration::ZERO,
             },
+            &crate::health::Health::new(Duration::ZERO).device(crate::health::Acceptor::CashCode),
         )
         .unwrap();
         assert!(attempts.is_empty(), "driver stopped before reconnecting");
@@ -546,6 +580,7 @@ mod tests {
             event_tx,
             cmd_rx,
             Timing::default(),
+            &crate::health::Health::new(Duration::ZERO).device(crate::health::Acceptor::CashCode),
         )
         .unwrap();
     }

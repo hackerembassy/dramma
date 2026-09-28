@@ -12,21 +12,26 @@ mod diag_logger;
 mod donation;
 mod error;
 mod funds;
+mod health;
 mod home_assistant;
 mod printer;
 mod receipt_render;
 mod retroarch;
 mod sound;
+#[cfg(test)]
+mod ui_tests;
 
 use cashcode::BillEvent;
 use config::Config;
+use health::{Acceptor, DeviceHealth, Health};
 use log::{error, info, warn};
 use slint::Model;
 use std::cell::RefCell;
+use std::path::Path;
 use std::rc::Rc;
 use std::sync::mpsc::Sender;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub fn main() {
     let log_rx = diag_logger::init();
@@ -34,11 +39,6 @@ pub fn main() {
     info!("Starting :3");
 
     sound::init();
-
-    // Test
-    for _ in 0..5 {
-        sound::play_yippee();
-    }
 
     // Load config
     let config = match Config::load() {
@@ -51,6 +51,14 @@ pub fn main() {
             Config::default()
         }
     };
+
+    // Loaded from disk since a prior reboot wiped any in-memory record of
+    // how many times we've already tried and failed to fix this by restarting.
+    let reboot_streak = health::load_reboot_streak(Path::new(health::DEFAULT_REBOOT_STATE_PATH));
+    let health = Health::new_with_reboot_streak(
+        Duration::from_secs(config.acceptor_restart_timeout_secs),
+        reboot_streak,
+    );
 
     let main_window = MainWindow::new().unwrap();
 
@@ -68,8 +76,8 @@ pub fn main() {
     virtual_keyboard::init(&main_window);
     autocomplete_handler::init(&main_window);
     let printer_tx = printer::init(config.printer_serial_port.clone());
-    let cashcode_tx = bill_acceptor::init(&main_window, &config);
-    let cctalk_tx = coin_acceptor::init(&main_window, &config, cashcode_tx.clone());
+    let cashcode_tx = bill_acceptor::init(&main_window, &config, health.device(Acceptor::CashCode));
+    let cctalk_tx = coin_acceptor::init(&main_window, &config, cashcode_tx.clone(), &health);
     fund_fetcher::init(&main_window, &config);
     diagnostics_handler::init(
         &main_window,
@@ -78,6 +86,7 @@ pub fn main() {
         cctalk_tx.clone(),
         printer_tx.clone(),
         config.token.clone(),
+        health.clone(),
     );
     donation_handler::init(
         &main_window,
@@ -88,6 +97,7 @@ pub fn main() {
     );
     home_assistant_handler::init(&main_window, &config);
     game_handler::init(&main_window, &config, printer_tx);
+    health_handler::init(&main_window, health, &config);
 
     main_window.run().unwrap();
 }
@@ -99,7 +109,11 @@ mod bill_acceptor {
 
     pub use crate::cashcode_driver::CashCodeCommand;
 
-    pub fn init(app: &MainWindow, config: &Config) -> Sender<CashCodeCommand> {
+    pub fn init(
+        app: &MainWindow,
+        config: &Config,
+        health: DeviceHealth,
+    ) -> Sender<CashCodeCommand> {
         let weak = app.as_weak();
 
         // Create a channel for bill events (from CashCode to UI)
@@ -116,26 +130,10 @@ mod bill_acceptor {
                 &config.stats_db_path,
                 event_tx,
                 cmd_rx,
+                health,
             ) {
                 Ok(_) => info!("CashCode driver stopped"),
                 Err(e) => error!("CashCode driver error: {}", e),
-            }
-        });
-
-        // Set up callbacks for page transitions
-        let cmd_tx_start = cmd_tx.clone();
-        app.on_start_accepting_money(move || {
-            info!("📥 UI: Start accepting money");
-            if cmd_tx_start.send(CashCodeCommand::Enable).is_err() {
-                error!("Failed to send enable command to CashCode");
-            }
-        });
-
-        let cmd_tx_stop = cmd_tx.clone();
-        app.on_stop_accepting_money(move || {
-            info!("📤 UI: Stop accepting money");
-            if cmd_tx_stop.send(CashCodeCommand::Disable).is_err() {
-                error!("Failed to send disable command to CashCode");
             }
         });
 
@@ -221,6 +219,7 @@ mod coin_acceptor {
         app: &MainWindow,
         config: &Config,
         cashcode_tx: Sender<bill_acceptor::CashCodeCommand>,
+        health: &Health,
     ) -> Sender<CoinAcceptorCommand> {
         let weak = app.as_weak();
 
@@ -230,13 +229,19 @@ mod coin_acceptor {
         thread::spawn({
             let serial_port = config.cctalk_serial_port.clone();
             let coin_overrides = config.cctalk_coin_overrides.clone();
-            move || cctalk::run(serial_port, event_tx, cmd_rx, coin_overrides)
+            let device_health = health.device(Acceptor::CcTalk);
+            move || cctalk::run(serial_port, event_tx, cmd_rx, coin_overrides, device_health)
         });
 
-        // Override start/stop callbacks to drive both bill and coin acceptors.
+        // Drive both acceptors together and block new payments during an outage.
         let cmd_tx_start = cmd_tx.clone();
         let cashcode_tx_start = cashcode_tx.clone();
+        let health_start = health.clone();
         app.on_start_accepting_money(move || {
+            if !health_start.snapshot().healthy() {
+                warn!("Cannot accept money while an acceptor is unavailable");
+                return;
+            }
             info!("📥 UI: Start accepting money (bills + coins)");
             if cashcode_tx_start
                 .send(bill_acceptor::CashCodeCommand::Enable)
@@ -755,6 +760,12 @@ mod donation_handler {
         let timer_activity = inactivity_timer.clone();
         let ticker_activity = countdown_ticker.clone();
         app.on_activity_on_insert_money(move || {
+            if !weak_activity
+                .upgrade()
+                .is_some_and(|w| w.get_on_insert_money_page())
+            {
+                return;
+            }
             info!("⏱️  Bill inserted — resetting inactivity timer");
             // Reset countdown display
             if let Some(w) = weak_activity.upgrade() {
@@ -892,6 +903,7 @@ mod diagnostics_handler {
         cctalk_tx: Sender<cctalk::CoinAcceptorCommand>,
         printer_tx: Sender<printer::PrinterCommand>,
         token: Option<String>,
+        health: Health,
     ) {
         // Build the model and hand it to the window.
         let log_model = std::rc::Rc::new(VecModel::<LogEntry>::default());
@@ -978,6 +990,95 @@ mod diagnostics_handler {
                 error!("Failed to send PrintTestReceipt command");
             }
         });
+
+        app.on_diag_toggle_maintenance_mode(move |enabled| {
+            info!(
+                "🛠️ Diagnostics: maintenance mode {}",
+                if enabled { "enabled" } else { "disabled" }
+            );
+            health.set_maintenance_mode(enabled);
+        });
+    }
+}
+
+mod health_handler {
+    use super::*;
+    use crate::home_assistant;
+
+    /// Every startup (so every deploy or reboot) briefly reports both
+    /// acceptors as "Initializing" before their first successful poll —
+    /// that's not a real fault. Only push an error to Home Assistant if it's
+    /// still unhealthy after this long; the local kiosk screen still reacts
+    /// instantly regardless, since that check is separate from this one.
+    const HA_ERROR_GRACE_PERIOD: Duration = Duration::from_secs(15);
+
+    pub fn init(app: &MainWindow, health: Health, config: &Config) {
+        // Drivers report independently of the UI so the Home Assistant sensor and
+        // watchdog still detect failed or stalled workers.
+        health.start_watchdog();
+        let weak = app.as_weak();
+
+        let ha_target = config
+            .home_assistant_token
+            .clone()
+            .map(|token| (config.home_assistant_api_url.clone(), token));
+        if ha_target.is_none() {
+            warn!("⚠️  No Home Assistant token configured, health sensor push disabled");
+        }
+
+        let timer = slint::Timer::default();
+        let mut last_available = None;
+        let mut last_reboot_streak = health.reboot_streak();
+        let mut last_pushed_available: Option<bool> = None;
+        let mut unhealthy_since: Option<Instant> = None;
+        timer.start(
+            slint::TimerMode::Repeated,
+            Duration::from_millis(100),
+            move || {
+                let snapshot = health.snapshot();
+                let available = snapshot.healthy();
+                if last_available != Some(available) {
+                    if let Some(window) = weak.upgrade() {
+                        window.invoke_acceptor_health_changed(available);
+                    }
+                    last_available = Some(available);
+                }
+
+                // Home Assistant push: debounced separately from the local UI
+                // above, so a normal few-second startup blip never alerts.
+                let should_push = if available {
+                    unhealthy_since = None;
+                    last_pushed_available != Some(true)
+                } else {
+                    let since = *unhealthy_since.get_or_insert_with(Instant::now);
+                    since.elapsed() >= HA_ERROR_GRACE_PERIOD && last_pushed_available != Some(false)
+                };
+                if should_push {
+                    last_pushed_available = Some(available);
+                    if let Some((api_url, token)) = ha_target.clone() {
+                        let _ = slint::spawn_local(async move {
+                            if let Err(e) =
+                                home_assistant::push_health(&api_url, &token, &snapshot).await
+                            {
+                                error!("Failed to push health sensor to Home Assistant: {}", e);
+                            }
+                        });
+                    }
+                }
+
+                // Persist so a future reboot (or crash) knows how many
+                // consecutive attempts have already failed to fix this.
+                let reboot_streak = health.reboot_streak();
+                if reboot_streak != last_reboot_streak {
+                    health::save_reboot_streak(
+                        Path::new(health::DEFAULT_REBOOT_STATE_PATH),
+                        reboot_streak,
+                    );
+                    last_reboot_streak = reboot_streak;
+                }
+            },
+        );
+        std::mem::forget(timer);
     }
 }
 
@@ -1060,6 +1161,26 @@ mod game_handler {
 
         let weak = app.as_weak();
 
+        // External fullscreen applications must not cover the issue page.
+        app.on_stop_game_for_technical_issue({
+            let retroarch = retroarch.clone();
+            let session_timer = session_timer.clone();
+            let two_min_timer = two_min_timer.clone();
+            let one_min_timer = one_min_timer.clone();
+            let tick_timer = tick_timer.clone();
+            let weak = weak.clone();
+            move || {
+                retroarch.close();
+                *session_timer.borrow_mut() = None;
+                *two_min_timer.borrow_mut() = None;
+                *one_min_timer.borrow_mut() = None;
+                *tick_timer.borrow_mut() = None;
+                if let Some(window) = weak.upgrade() {
+                    window.set_game_seconds_left(0);
+                }
+            }
+        });
+
         app.on_launch_game({
             let retroarch = retroarch.clone();
             let games = games.clone();
@@ -1129,14 +1250,33 @@ mod game_handler {
                 }
 
                 // ── 1-second countdown ticker ──────────────────────────────────
+                // Also polls RetroArch: if it has crashed or exited early, end the
+                // session immediately instead of leaving a frozen/glitched screen
+                // up for the rest of the time the player paid for.
                 {
                     let weak_tick = weak.clone();
+                    let retroarch_tick = retroarch.clone();
+                    let session_tick = session_timer.clone();
+                    let two_tick = two_min_timer.clone();
+                    let one_tick = one_min_timer.clone();
                     let ticker = Timer::default();
                     ticker.start(TimerMode::Repeated, Duration::from_secs(1), move || {
                         if let Some(w) = weak_tick.upgrade() {
                             let cur = w.get_game_seconds_left();
                             if cur > 0 {
-                                w.set_game_seconds_left(cur - 1);
+                                if retroarch_tick.is_running() {
+                                    w.set_game_seconds_left(cur - 1);
+                                } else {
+                                    info!(
+                                        "🎮 RetroArch exited unexpectedly — ending game session early"
+                                    );
+                                    retroarch_tick.close();
+                                    *session_tick.borrow_mut() = None;
+                                    *two_tick.borrow_mut() = None;
+                                    *one_tick.borrow_mut() = None;
+                                    w.set_game_seconds_left(0);
+                                    w.invoke_game_time_expired();
+                                }
                             }
                         }
                     });

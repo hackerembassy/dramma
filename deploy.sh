@@ -80,8 +80,13 @@ echo "Patching binary for portable deployment (using system interpreter)..."
 
 echo "Deploying binary..."
 scp ${LOCAL_BINARY} root@${DRAMMA_HOST}:${REMOTE_DIR}/dramma
+scp retroarch-kiosk.cfg root@${DRAMMA_HOST}:${REMOTE_DIR}/retroarch-kiosk.cfg
+scp retroarch-core-options.cfg root@${DRAMMA_HOST}:${REMOTE_DIR}/retroarch-core-options.cfg
 
-ssh root@${DRAMMA_HOST} "chown -R ${DRAMMA_USER}:${DRAMMA_USER} ${REMOTE_DIR}/lib && chmod +x ${REMOTE_DIR}/dramma"
+ssh root@${DRAMMA_HOST} "chown -R ${DRAMMA_USER}:${DRAMMA_USER} ${REMOTE_DIR}/lib && \
+  chown root:root ${REMOTE_DIR}/retroarch-kiosk.cfg ${REMOTE_DIR}/retroarch-core-options.cfg && \
+  chmod 0444 ${REMOTE_DIR}/retroarch-kiosk.cfg ${REMOTE_DIR}/retroarch-core-options.cfg && \
+  chmod +x ${REMOTE_DIR}/dramma"
 
 # Ensure patchelf is installed on target for the next step
 echo "Ensuring patchelf is installed on target..."
@@ -106,6 +111,9 @@ if [ -f "data/Stats.db" ]; then
 fi
 
 # Create systemd user service on remote machine
+echo "Allowing the kiosk watchdog to request a system reboot..."
+ssh root@${DRAMMA_HOST} "sh -s -- '${DRAMMA_USER}'" < scripts/install-reboot-permission.sh
+
 echo "Setting up systemd service..."
 ssh root@${DRAMMA_HOST} "su - ${DRAMMA_USER} -c 'mkdir -p ~/.config/systemd/user'"
 
@@ -145,6 +153,8 @@ Name=Dramma Kiosk
 Exec=systemctl --user start dramma.service
 X-LXQt-Need-Tray=false
 DESKTOPEOF
+# RetroArch runs as the kiosk user and no longer needs root access to the X server.
+ssh root@${DRAMMA_HOST} "rm -f /home/${DRAMMA_USER}/.config/autostart/xhost-root.desktop"
 ssh root@${DRAMMA_HOST} "su - ${DRAMMA_USER} -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user restart dramma.service'"
 echo ""
 echo "✅ Deployment complete!"

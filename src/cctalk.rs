@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender};
 use std::time::Duration;
 
+use crate::health::DeviceHealth;
 use cc_talk_core::cc_talk::{
     Address, Category, ChecksumType, CoinEvent, DATA_LENGTH_OFFSET, Device, MAX_BLOCK_LENGTH,
     Packet, deserializer::deserialize, serializer::serialize,
@@ -89,13 +90,16 @@ pub fn run(
     event_tx: Sender<CoinAcceptorEvent>,
     cmd_rx: Receiver<CoinAcceptorCommand>,
     coin_overrides: Vec<[i32; 2]>,
+    health: DeviceHealth,
 ) {
+    let _worker = health.worker_guard();
     let rt = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
     {
         Ok(rt) => rt,
         Err(e) => {
+            health.unavailable(format!("Failed to start ccTalk runtime: {e}"));
             error!(
                 "Failed to create tokio runtime for ccTalk coin acceptor: {}",
                 e
@@ -123,6 +127,7 @@ pub fn run(
                     match find_cctalk_port().await {
                         Some(p) => break p,
                         None => {
+                            health.unavailable("No ccTalk device found");
                             warn!("ccTalk: no device found, retrying in {:?}", RECONNECT_DELAY);
                             let _ = event_tx.send(CoinAcceptorEvent::Status(
                                 format!("No device found · retrying in {:?}", RECONNECT_DELAY),
@@ -145,6 +150,7 @@ pub fn run(
                 &mut enabled,
                 &coin_overrides,
                 ping_on_connect,
+                &health,
             )
             .await
             {
@@ -153,6 +159,7 @@ pub fn run(
                     break;
                 }
                 Err(e) => {
+                    health.unavailable(e.to_string());
                     let is_reenumerate = e.to_string() == "reenumerate";
                     ping_on_connect = is_reenumerate;
 
@@ -219,16 +226,23 @@ impl CcTalkSerialTransport {
         }
     }
 
-    async fn run(mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn open_port(&self) -> Result<SerialStream, Box<dyn std::error::Error>> {
         let builder = tokio_serial::new(&self.serial_port, CCTALK_BAUD)
             .data_bits(tokio_serial::DataBits::Eight)
             .stop_bits(tokio_serial::StopBits::One)
             .parity(tokio_serial::Parity::None)
             .timeout(self.rw_timeout);
 
-        let mut port = SerialStream::open(&builder)
-            .map_err(|e| format!("Failed to open serial port {}: {}", self.serial_port, e))?;
+        SerialStream::open(&builder)
+            .map_err(|e| format!("Failed to open serial port {}: {}", self.serial_port, e).into())
+    }
 
+    async fn run(self) -> Result<(), Box<dyn std::error::Error>> {
+        let port = self.open_port()?;
+        self.run_on(port).await
+    }
+
+    async fn run_on(mut self, mut port: SerialStream) -> Result<(), Box<dyn std::error::Error>> {
         info!(
             "ccTalk: serial port {} opened at {} baud",
             self.serial_port, CCTALK_BAUD
@@ -477,6 +491,7 @@ async fn run_session(
     enabled: &mut bool,
     coin_overrides: &[[i32; 2]],
     ping_solenoids: bool,
+    health: &DeviceHealth,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (transport_tx, transport_rx) = tokio_mpsc::channel(32);
 
@@ -485,9 +500,12 @@ async fn run_session(
         serial_port.to_string(),
         Duration::from_millis(500),
     );
+    // Surface the actual serial open error in health, rather than a subsequent
+    // channel-closed error from the transport task.
+    let port = transport.open_port()?;
 
     tokio::spawn(async move {
-        if let Err(e) = transport.run().await {
+        if let Err(e) = transport.run_on(port).await {
             error!("ccTalk transport error: {}", e);
         }
     });
@@ -578,8 +596,20 @@ async fn run_session(
 
     // Clear any individual coin inhibits the device may have persisted so they
     // don't silently block coins independently of the master inhibit.
-    if let Err(e) = validator.set_all_coin_inhibits(false).await {
-        warn!("Could not clear individual coin inhibits: {}", e);
+    validator.set_all_coin_inhibits(false).await?;
+
+    // Commands may have arrived during discovery/initialization, including a
+    // Disable from the technical-issue page. Apply the latest intent first.
+    while let Ok(cmd) = cmd_rx.try_recv() {
+        match cmd {
+            CoinAcceptorCommand::Enable => *enabled = true,
+            CoinAcceptorCommand::Disable => *enabled = false,
+            CoinAcceptorCommand::Reenumerate => {
+                health.unavailable("Re-enumerating coin acceptor");
+                reenumerate_usb().await;
+                return Err("reenumerate".into());
+            }
+        }
     }
 
     // Start with or restore the desired inhibit state.
@@ -627,6 +657,7 @@ async fn run_session(
         while let Ok(cmd) = cmd_rx.try_recv() {
             match cmd {
                 CoinAcceptorCommand::Enable if !*enabled => {
+                    *enabled = true;
                     // Click the solenoid as an invitation to use the coin machine
                     if let Err(e) = validator
                         .send_command(
@@ -638,31 +669,25 @@ async fn run_session(
                     }
 
                     info!("Enabling ccTalk coin acceptor...");
-                    if let Err(e) = validator.disable_master_inhibit().await {
-                        error!("Failed to disable master inhibit: {}", e);
-                    } else {
-                        *enabled = true;
-                        info!("ccTalk coin acceptor enabled");
-                        let _ = event_tx.send(CoinAcceptorEvent::Status(
-                            format!("{} · Enabled", device_label),
-                            1,
-                        ));
-                    }
+                    validator.disable_master_inhibit().await?;
+                    info!("ccTalk coin acceptor enabled");
+                    let _ = event_tx.send(CoinAcceptorEvent::Status(
+                        format!("{} · Enabled", device_label),
+                        1,
+                    ));
                 }
                 CoinAcceptorCommand::Disable if *enabled => {
+                    *enabled = false;
                     info!("Disabling ccTalk coin acceptor...");
-                    if let Err(e) = validator.enable_master_inhibit().await {
-                        error!("Failed to enable master inhibit: {}", e);
-                    } else {
-                        *enabled = false;
-                        info!("ccTalk coin acceptor disabled");
-                        let _ = event_tx.send(CoinAcceptorEvent::Status(
-                            format!("{} · Disabled", device_label),
-                            1,
-                        ));
-                    }
+                    validator.enable_master_inhibit().await?;
+                    info!("ccTalk coin acceptor disabled");
+                    let _ = event_tx.send(CoinAcceptorEvent::Status(
+                        format!("{} · Disabled", device_label),
+                        1,
+                    ));
                 }
                 CoinAcceptorCommand::Reenumerate => {
+                    health.unavailable("Re-enumerating coin acceptor");
                     info!("ccTalk: re-enumeration requested via diagnostics");
                     let _ = event_tx.send(CoinAcceptorEvent::Status(
                         "Re-enumerating USB...".to_string(),
@@ -677,6 +702,7 @@ async fn run_session(
 
         match validator.poll().await {
             Ok(poll) => {
+                health.ready();
                 consecutive_errors = 0;
 
                 if poll.event_counter == last_counter {
@@ -719,6 +745,7 @@ async fn run_session(
                 }
             }
             Err(e) => {
+                health.unavailable(format!("Poll failed: {e}"));
                 consecutive_errors += 1;
                 error!(
                     "ccTalk poll error ({}/{}): {}",

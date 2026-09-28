@@ -9,8 +9,20 @@ export component DiagnosticsAuth inherits Rectangle {
     property <bool> wrong: false;
 
     init => {
-        VirtualKeyboardHandler.open = true;
         password-input.focus();
+    }
+
+    // Deferred by a frame: opening the keyboard synchronously in `init` can
+    // race with the previous page's keyboard still mid-way through its
+    // close animation when this page replaces it, leaving `open` clobbered
+    // back to false on real hardware.
+    keyboard-open-timer := Timer {
+        interval: 16ms;
+        running: true;
+        triggered => {
+            self.running = false;
+            VirtualKeyboardHandler.open = true;
+        }
     }
 
     function try-unlock() {

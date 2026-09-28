@@ -1,4 +1,4 @@
-import { Button, Palette, ListView } from "std-widgets.slint";
+import { Button, Palette, ListView, Switch } from "std-widgets.slint";
 
 // level: 0 = neutral/grey · 1 = ok/green · 2 = warn/orange · 3 = error/red
 export struct LogEntry {
@@ -13,12 +13,14 @@ export component Diagnostics inherits Rectangle {
     callback play-sound();
     callback check-backend();
     callback test-printer();
+    callback toggle-maintenance-mode(bool);
 
 
     in-out property <[LogEntry]> log-lines: [];
     in property <LogEntry> bill-status: { level: 0, text: "Initializing..." };
     in property <LogEntry> coin-status: { level: 0, text: "Initializing..." };
     in property <LogEntry> backend-status: { level: 0, text: "Not checked" };
+    in property <bool> maintenance-mode: false;
 
     // Action buttons are locked for a brief moment after the page appears so
     // that the tap gesture that opened diagnostics cannot accidentally trigger them.
@@ -138,6 +140,32 @@ export component Diagnostics inherits Rectangle {
                     inactivity-timer.running = true;
                     root.seconds-left = 120;
                     root.test-printer();
+                }
+            }
+        }
+
+        // ── Maintenance mode ─────────────────────────────────────────────
+        HorizontalLayout {
+            spacing: 12px;
+            alignment: center;
+            height: 40px;
+
+            Text {
+                text: "Maintenance Mode";
+                font-size: 15px;
+                font-weight: 600;
+                color: Palette.foreground;
+                vertical-alignment: center;
+            }
+
+            Switch {
+                checked: root.maintenance-mode;
+                enabled: !root.guard;
+                toggled => {
+                    inactivity-timer.running = false;
+                    inactivity-timer.running = true;
+                    root.seconds-left = 120;
+                    root.toggle-maintenance-mode(self.checked);
                 }
             }
         }

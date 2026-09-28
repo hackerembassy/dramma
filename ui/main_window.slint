@@ -10,6 +10,7 @@ import { Cat } from "pages/cat.slint";
 import { HomeAssistant } from "pages/home_assistant.slint";
 import { Diagnostics, LogEntry } from "pages/diagnostics.slint";
 import { DiagnosticsAuth } from "pages/diagnostics_auth.slint";
+import { TechnicalIssue } from "pages/technical_issue.slint";
 
 export { VirtualKeyboardHandler, KeyModel, AutocompleteHandler }
 
@@ -28,6 +29,56 @@ enum Page {
 
 export component MainWindow inherits Window {
     property <Page> current-page: Page.Main;
+    property <Page> diagnostics-return-page: Page.Main;
+    in-out property <bool> acceptors-available: false;
+    out property <bool> showing-technical-issue: !acceptors-available
+        && current-page != Page.Diagnostics && current-page != Page.DiagnosticsAuth;
+
+    callback resume-current-page();
+    resume-current-page => {
+        if root.acceptors-available {
+            if current-page == Page.InsertMoney || current-page == Page.Cat {
+                root.start-accepting-money();
+                root.enter-insert-money();
+            } else if current-page == Page.InsertCoins {
+                root.start-accepting-money();
+            } else if current-page == Page.HomeAssistant {
+                root.show-home-assistant();
+            }
+        }
+    }
+    callback acceptor-health-changed(bool);
+    acceptor-health-changed(available) => {
+        root.acceptors-available = available;
+        if available {
+            root.resume-current-page();
+        } else {
+            root.stop-accepting-money();
+            root.leave-insert-money();
+            VirtualKeyboardHandler.open = false;
+            root.show-confetti = false;
+            if current-page == Page.HomeAssistant {
+                root.hide-home-assistant();
+            }
+            if root.game-seconds-left > 0 {
+                root.stop-game-for-technical-issue();
+            }
+        }
+    }
+    callback open-diagnostics();
+    open-diagnostics => {
+        root.diagnostics-return-page = root.current-page;
+        // Skip the password gate when opened from the technical-issue/maintenance
+        // screen: the machine is already visibly out of service, and the virtual
+        // keyboard there is currently unreliable. TODO: reinstate once fixed.
+        root.current-page = (root.diagnostics-password == "" || root.showing-technical-issue)
+            ? Page.Diagnostics : Page.DiagnosticsAuth;
+    }
+    callback return-from-diagnostics();
+    return-from-diagnostics => {
+        root.current-page = root.diagnostics-return-page;
+        root.resume-current-page();
+    }
     in-out property <int> session-amount: 0;
     in-out property <string> session-username: "";
     in-out property <int> session-fund-id: 0;
@@ -44,7 +95,7 @@ export component MainWindow inherits Window {
     // inactivity countdown (seconds remaining, updated by Rust)
     in-out property <int> inactivity-seconds-left: 180;
     // read by Rust to guard inactivity timeout from firing on wrong page
-    out property <bool> on-insert-money-page: current-page == Page.InsertMoney || current-page == Page.Cat;
+    out property <bool> on-insert-money-page: acceptors-available && (current-page == Page.InsertMoney || current-page == Page.Cat);
 
     // toast state — set by Rust when a bill or coin is accepted
     in-out property <int> last-added-amount: 0;
@@ -53,15 +104,20 @@ export component MainWindow inherits Window {
     /// Password required to enter Diagnostics, set once from Rust config at
     /// startup. Empty string means no password is configured — gate skipped.
     in-out property <string> diagnostics-password: "";
+    /// True while the password gate (DiagnosticsAuth) is showing, as opposed
+    /// to having reached the Diagnostics panel itself.
+    out property <bool> on-diagnostics-auth-page: current-page == Page.DiagnosticsAuth;
     in-out property <[LogEntry]> diag-logs: [];
     in-out property <LogEntry> diag-bill-status: { level: 0, text: "Initializing..." };
     in-out property <LogEntry> diag-coin-status: { level: 0, text: "Initializing..." };
     in-out property <LogEntry> diag-backend-status: { level: 0, text: "Not checked" };
+    in-out property <bool> diag-maintenance-mode: false;
     callback diag-reset-bills();
     callback diag-reenumerate-coins();
     callback diag-play-sound();
     callback diag-check-backend();
     callback diag-test-printer();
+    callback diag-toggle-maintenance-mode(bool);
 
     // callbacks for rust to hook into
     callback done-clicked(string, int, int, bool);  // username, fund_id, amount, print_receipt
@@ -97,6 +153,7 @@ export component MainWindow inherits Window {
     out property <bool> on-insert-coins-page: current-page == Page.InsertCoins;
 
     callback launch-game(int, string, bool);  // amount, game-name, print_receipt  — Rust starts RetroArch
+    callback stop-game-for-technical-issue();
     callback game-time-expired();       // Rust calls when session timer fires
     game-time-expired => {
         root.current-page = Page.Main;
@@ -115,6 +172,7 @@ export component MainWindow inherits Window {
     background: #000000;
 
     Rectangle {
+        visible: !root.showing-technical-issue;
         background: #000000;
         if current-page == Page.Main: Main {
             donate-clicked => {
@@ -142,7 +200,7 @@ export component MainWindow inherits Window {
             }
 
             secret-tapped => {
-                root.current-page = root.diagnostics-password == "" ? Page.Diagnostics : Page.DiagnosticsAuth;
+                root.open-diagnostics();
             }
         }
         if current-page == Page.Donate: Donate {
@@ -280,7 +338,7 @@ export component MainWindow inherits Window {
         if current-page == Page.DiagnosticsAuth: DiagnosticsAuth {
             expected-password: root.diagnostics-password;
             back-clicked => {
-                root.current-page = Page.Main;
+                root.return-from-diagnostics();
             }
             unlocked => {
                 root.current-page = Page.Diagnostics;
@@ -291,12 +349,14 @@ export component MainWindow inherits Window {
             bill-status: root.diag-bill-status;
             coin-status: root.diag-coin-status;
             backend-status: root.diag-backend-status;
-            back-clicked => { root.current-page = Page.Main; }
+            maintenance-mode: root.diag-maintenance-mode;
+            back-clicked => { root.return-from-diagnostics(); }
             reset-bills => { root.diag-reset-bills(); }
             reenumerate-coins => { root.diag-reenumerate-coins(); }
             play-sound => { root.diag-play-sound(); }
             check-backend => { root.diag-check-backend(); }
             test-printer => { root.diag-test-printer(); }
+            toggle-maintenance-mode(enabled) => { root.diag-toggle-maintenance-mode(enabled); }
         }
 
 
@@ -304,5 +364,9 @@ export component MainWindow inherits Window {
         if root.show-confetti: ConfettiOverlay {
             falling: root.confetti-falling;
         }
+    }
+
+    if root.showing-technical-issue: TechnicalIssue {
+        secret-tapped => { root.open-diagnostics(); }
     }
 }

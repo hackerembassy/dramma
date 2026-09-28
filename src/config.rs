@@ -30,6 +30,10 @@ pub struct Config {
     pub diagnostics_password: Option<String>,
     pub home_assistant_url: String,
     pub hass_api_port: u16,
+    pub home_assistant_api_url: String,
+    pub home_assistant_token: Option<String>,
+    /// Continuous acceptor outage before rebooting the computer; 0 disables reboot.
+    pub acceptor_restart_timeout_secs: u64,
     pub cashcode_serial_port: String,
     pub cctalk_serial_port: String,
     pub printer_serial_port: String,
@@ -46,6 +50,9 @@ impl Default for Config {
             diagnostics_password: None,
             home_assistant_url: "https://ha.hackem.cc/web-dramma/0?BrowserID=dramma".to_string(),
             hass_api_port: 8321,
+            home_assistant_api_url: "https://ha.hackem.cc".to_string(),
+            home_assistant_token: None,
+            acceptor_restart_timeout_secs: 300,
             cashcode_serial_port:
                 "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0"
                     .to_string(),

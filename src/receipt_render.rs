@@ -576,8 +576,12 @@ pub fn render_receipt_to_escpos(data: &ReceiptData) -> Vec<u8> {
         }
     }
 
-    // Feed lines & Cut sequence
-    buf.extend_from_slice(b"\n\n\n\n\x1D\x56\x00");
+    // Feed extra blank paper and don't cut at all. This printer's cutter is a
+    // V-shaped blade — mechanically full-cut-only, so GS V 1 (partial cut)
+    // has no effect; it still severs the receipt completely. Skipping the
+    // cut command entirely is the only way to keep the receipt attached to
+    // the roll, with enough feed to leave a margin the user can tear by hand.
+    buf.extend_from_slice(b"\n\n\n\n\n\n\n\n");
 
     buf
 }
