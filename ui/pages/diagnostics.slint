@@ -20,6 +20,7 @@ export component Diagnostics inherits Rectangle {
     callback reenumerate-coins();
     callback play-sound();
     callback check-backend();
+    callback check-printer();
     callback test-printer();
     callback toggle-maintenance-mode(bool);
     callback toggle-coin-slot(int, bool);
@@ -28,6 +29,7 @@ export component Diagnostics inherits Rectangle {
     in-out property <[LogEntry]> log-lines: [];
     in property <LogEntry> bill-status: { level: 0, text: "Initializing..." };
     in property <LogEntry> coin-status: { level: 0, text: "Initializing..." };
+    in property <LogEntry> printer-status: { level: 0, text: "Checking..." };
     in property <LogEntry> backend-status: { level: 0, text: "Not checked" };
     in property <bool> maintenance-mode: false;
     in property <[CoinSlot]> coin-slots: [];
@@ -54,6 +56,23 @@ export component Diagnostics inherits Rectangle {
         interval: 1s;
         running: true;
         triggered => { if root.seconds-left > 0 { root.seconds-left -= 1; } }
+    }
+
+    // Query immediately after the page appears, then keep the status fresh
+    // while this diagnostics component exists.
+    property <bool> initial-printer-check: true;
+    Timer {
+        interval: 100ms;
+        running: root.initial-printer-check;
+        triggered => {
+            root.initial-printer-check = false;
+            root.check-printer();
+        }
+    }
+    Timer {
+        interval: 3s;
+        running: true;
+        triggered => { root.check-printer(); }
     }
 
     // Background TouchArea — any tap resets the inactivity timer.
@@ -187,7 +206,7 @@ export component Diagnostics inherits Rectangle {
             border-width: 1px;
             border-color: Palette.color-scheme == ColorScheme.dark ? #444444 : #cccccc;
             background: Palette.color-scheme == ColorScheme.dark ? #1c1c1c : #f6f6f6;
-            height: 118px;
+            height: 150px;
 
             VerticalLayout {
                 padding: 10px;
@@ -248,6 +267,37 @@ export component Diagnostics inherits Rectangle {
                     }
                     Text {
                         text: root.coin-status.text;
+                        font-size: 13px;
+                        color: Palette.foreground;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                        overflow: elide;
+                    }
+                }
+
+                // Receipt printer row
+                HorizontalLayout {
+                    spacing: 8px;
+                    height: 26px;
+                    Text {
+                        text: "Receipt printer";
+                        font-size: 13px;
+                        color: Palette.foreground;
+                        opacity: 0.55;
+                        width: 130px;
+                        vertical-alignment: center;
+                    }
+                    Rectangle {
+                        width: 10px;
+                        height: 10px;
+                        border-radius: 5px;
+                        y: (parent.height - self.height) / 2;
+                        background: root.printer-status.level == 1 ? #4caf50 :
+                                    root.printer-status.level == 2 ? #ff8c00 :
+                                    root.printer-status.level == 3 ? #f44336 : #808080;
+                    }
+                    Text {
+                        text: root.printer-status.text;
                         font-size: 13px;
                         color: Palette.foreground;
                         vertical-alignment: center;

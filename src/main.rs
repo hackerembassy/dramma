@@ -982,8 +982,54 @@ mod donation_handler {
 mod diagnostics_handler {
     use super::*;
     use slint::{ModelRc, Timer, TimerMode, VecModel};
+    use std::cell::Cell;
+    use std::sync::mpsc::channel;
 
     const MAX_LOG_LINES: usize = 300;
+
+    fn printer_status_entry(status: printer::PrinterStatus) -> LogEntry {
+        let mut problems = Vec::new();
+        if !status.online {
+            problems.push("offline");
+        }
+        if status.cover_open {
+            problems.push("cover open");
+        }
+        if status.paper_out {
+            problems.push("out of paper");
+        }
+        if status.cutter_error {
+            problems.push("cutter error");
+        }
+        if status.unrecoverable_error {
+            problems.push("unrecoverable error");
+        }
+        if status.recoverable_error {
+            problems.push("recoverable error");
+        }
+        if status.auto_recoverable_error {
+            problems.push("temporary error");
+        }
+
+        if !problems.is_empty() {
+            return LogEntry {
+                level: 3,
+                text: problems.join(" · ").into(),
+            };
+        }
+
+        if status.paper_near_end {
+            LogEntry {
+                level: 2,
+                text: "Online · paper low".into(),
+            }
+        } else {
+            LogEntry {
+                level: 1,
+                text: "Online · cover closed · paper ready".into(),
+            }
+        }
+    }
 
     /// Returns (level, text): level 0=neutral 1=ok 2=warn 3=error
     async fn check_backend(token: Option<String>) -> (i32, String) {
@@ -1106,6 +1152,50 @@ mod diagnostics_handler {
             })
             .unwrap();
         });
+
+        let (printer_status_tx, printer_status_rx) = channel();
+        let printer_status_pending = Rc::new(Cell::new(false));
+        let pending_request = printer_status_pending.clone();
+        let weak_printer_request = app.as_weak();
+        let printer_tx_status = printer_tx.clone();
+        app.on_diag_check_printer(move || {
+            if pending_request.replace(true) {
+                return;
+            }
+
+            if printer_tx_status
+                .send(printer::PrinterCommand::Status(printer_status_tx.clone()))
+                .is_err()
+            {
+                pending_request.set(false);
+                if let Some(window) = weak_printer_request.upgrade() {
+                    window.set_diag_printer_status(LogEntry {
+                        level: 3,
+                        text: "Printer worker unavailable".into(),
+                    });
+                }
+            }
+        });
+
+        let weak_printer_status = app.as_weak();
+        let pending_response = printer_status_pending;
+        let printer_status_timer = Timer::default();
+        printer_status_timer.start(TimerMode::Repeated, Duration::from_millis(100), move || {
+            while let Ok(result) = printer_status_rx.try_recv() {
+                pending_response.set(false);
+                if let Some(window) = weak_printer_status.upgrade() {
+                    let entry = match result {
+                        Ok(status) => printer_status_entry(status),
+                        Err(error) => LogEntry {
+                            level: 3,
+                            text: format!("Unavailable: {error}").into(),
+                        },
+                    };
+                    window.set_diag_printer_status(entry);
+                }
+            }
+        });
+        std::mem::forget(printer_status_timer);
 
         let printer_tx_test = printer_tx;
         app.on_diag_test_printer(move || {

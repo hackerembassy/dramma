@@ -110,6 +110,7 @@ export component MainWindow inherits Window {
     in-out property <[LogEntry]> diag-logs: [];
     in-out property <LogEntry> diag-bill-status: { level: 0, text: "Initializing..." };
     in-out property <LogEntry> diag-coin-status: { level: 0, text: "Initializing..." };
+    in-out property <LogEntry> diag-printer-status: { level: 0, text: "Checking..." };
     in-out property <LogEntry> diag-backend-status: { level: 0, text: "Not checked" };
     in-out property <bool> diag-maintenance-mode: false;
     in-out property <[CoinSlot]> diag-coin-slots: [];
@@ -118,6 +119,7 @@ export component MainWindow inherits Window {
     callback diag-reenumerate-coins();
     callback diag-play-sound();
     callback diag-check-backend();
+    callback diag-check-printer();
     callback diag-test-printer();
     callback diag-toggle-maintenance-mode(bool);
     callback diag-toggle-coin-slot(int, bool);
@@ -351,6 +353,7 @@ export component MainWindow inherits Window {
             log-lines: root.diag-logs;
             bill-status: root.diag-bill-status;
             coin-status: root.diag-coin-status;
+            printer-status: root.diag-printer-status;
             backend-status: root.diag-backend-status;
             maintenance-mode: root.diag-maintenance-mode;
             coin-slots: root.diag-coin-slots;
@@ -360,6 +363,7 @@ export component MainWindow inherits Window {
             reenumerate-coins => { root.diag-reenumerate-coins(); }
             play-sound => { root.diag-play-sound(); }
             check-backend => { root.diag-check-backend(); }
+            check-printer => { root.diag-check-printer(); }
             test-printer => { root.diag-test-printer(); }
             toggle-maintenance-mode(enabled) => {
                 // The page is rebuilt on every visit, so its switch starts from this.
