@@ -61,21 +61,24 @@ acceptor's outage timer; reconnect attempts do not reset it. A worker with no
 successful poll for 30 seconds is also considered unavailable. A failed reboot
 command is reported in the health response and retried once per minute.
 
-If 3 consecutive reboots in a row don't lead to a single successful poll,
+If 3 consecutive reboots in a row don't bring both acceptors back,
 automatic rebooting stops — the fault is presumably hardware, not something a
 restart fixes, and looping forever just means longer, more frequent outages.
 The health response reports this ("Automatic reboot disabled... manual
 intervention required") instead of the usual acceptor error, so the
 Home Assistant sensor and its automations still surface it. This streak is
 tracked in `data/reboot_watchdog_state` (survives reboots since the process's
-own memory doesn't) and resets the moment either acceptor has a successful
-poll — delete that file to reset it manually.
+own memory doesn't) and resets once both acceptors are polling successfully —
+one acceptor working while the other stays down doesn't count. Delete that file
+to reset it manually.
 
 **Maintenance Mode** (a switch in the diagnostics panel) takes the kiosk out of
 service on demand: it shows the technical-issue screen and reports unhealthy to
 Home Assistant. While it's on, the watchdog never reboots, so acceptors can be
 unplugged for service. Switching it off restarts the full timeout for any
-acceptor that's still unavailable instead of rebooting immediately.
+acceptor that's still unavailable instead of rebooting immediately. It's
+remembered across restarts, reboots and deploys via `data/maintenance_mode`
+(present means on); delete that file to turn it off manually.
 
 Both deployment methods install a sudoers rule allowing the kiosk user only
 `/usr/bin/systemctl --no-block reboot`. For an existing installation, run the
@@ -120,6 +123,13 @@ value in its coin ID, read from the device on connect: the value is in luma
 with `K` marking thousands, so `AM1K0A` = 10 ֏ and `AM10KA` = 100 ֏. Turn on
 Maintenance Mode before unplugging the acceptor from the kiosk, so the watchdog
 doesn't reboot the machine while it's gone.
+
+The diagnostics page lists every programmed coin position and can enable or
+inhibit each one independently. These choices are separate from the global
+accept/stop state and are reapplied after resets and reconnects. Disabled
+one-based positions are stored in `data/cctalk_disabled_coin_slots`, one per
+line, so they survive restarts, reboots and deploys. Delete or empty that file
+while dramma is stopped to enable every slot on the next start.
 
 `scripts/cctalk-tool.py` talks to the acceptor directly (needs `pyserial`; stop
 dramma first, since the serial port is opened exclusively):

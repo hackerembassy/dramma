@@ -59,8 +59,16 @@ pub fn main() {
         Duration::from_secs(config.acceptor_restart_timeout_secs),
         reboot_streak,
     );
+    // Also restored from disk, so a reboot or deploy mid-service doesn't
+    // re-arm the watchdog while an acceptor is unplugged.
+    let maintenance_mode =
+        health::load_maintenance_mode(Path::new(health::DEFAULT_MAINTENANCE_STATE_PATH));
+    if maintenance_mode {
+        health.set_maintenance_mode(true);
+    }
 
     let main_window = MainWindow::new().unwrap();
+    main_window.set_diag_maintenance_mode(maintenance_mode);
 
     // Enable fullscreen mode for kiosk deployment
     main_window.window().set_fullscreen(true);
@@ -212,8 +220,43 @@ mod bill_acceptor {
 mod coin_acceptor {
     use super::*;
     use crate::cctalk::{CoinAcceptorCommand, CoinAcceptorEvent};
-    use slint::{Timer, TimerMode};
+    use slint::{ModelRc, Timer, TimerMode, VecModel};
     use std::sync::mpsc::channel;
+
+    fn queue_slot_change(
+        slots: &VecModel<CoinSlot>,
+        commands: &Sender<CoinAcceptorCommand>,
+        position: i32,
+        enabled: bool,
+    ) -> Result<(), String> {
+        let position = u8::try_from(position)
+            .ok()
+            .filter(|position| (1..=16).contains(position))
+            .ok_or_else(|| format!("Invalid coin slot position: {position}"))?;
+        let row_index = (0..slots.row_count())
+            .find(|&index| {
+                slots
+                    .row_data(index)
+                    .is_some_and(|slot| slot.position == i32::from(position))
+            })
+            .ok_or_else(|| format!("Coin slot {position} is not available"))?;
+        let mut slot = slots.row_data(row_index).unwrap();
+        let previous_enabled = slot.enabled;
+        slot.enabled = enabled;
+        slot.pending = true;
+        slots.set_row_data(row_index, slot.clone());
+
+        if commands
+            .send(CoinAcceptorCommand::SetSlotEnabled { position, enabled })
+            .is_err()
+        {
+            slot.enabled = previous_enabled;
+            slot.pending = false;
+            slots.set_row_data(row_index, slot);
+            return Err("Coin acceptor control channel is unavailable".to_string());
+        }
+        Ok(())
+    }
 
     pub fn init(
         app: &MainWindow,
@@ -225,6 +268,27 @@ mod coin_acceptor {
 
         let (event_tx, event_rx) = channel::<CoinAcceptorEvent>();
         let (cmd_tx, cmd_rx) = channel::<CoinAcceptorCommand>();
+
+        let slot_model = Rc::new(VecModel::<CoinSlot>::default());
+        app.set_diag_coin_slots(ModelRc::from(slot_model.clone()));
+
+        let slot_model_toggle = slot_model.clone();
+        let cmd_tx_slot = cmd_tx.clone();
+        let weak_slot = app.as_weak();
+        app.on_diag_toggle_coin_slot(move |position, enabled| {
+            if let Err(message) =
+                queue_slot_change(&slot_model_toggle, &cmd_tx_slot, position, enabled)
+            {
+                error!("{message}");
+                if let Some(window) = weak_slot.upgrade() {
+                    window.set_diag_coin_slots_available(false);
+                    window.set_diag_coin_status(LogEntry {
+                        level: 3,
+                        text: message.into(),
+                    });
+                }
+            }
+        });
 
         thread::spawn({
             let serial_port = config.cctalk_serial_port.clone();
@@ -269,7 +333,9 @@ mod coin_acceptor {
             }
         });
 
-        // Poll for coin events on the slint timer and add to session amount.
+        // Poll for coin events on the Slint timer, update diagnostics, and add
+        // accepted values to the current session.
+        let slot_model_events = slot_model;
         let timer = Timer::default();
         timer.start(
             TimerMode::Repeated,
@@ -292,10 +358,25 @@ mod coin_acceptor {
                                 });
                             }
                             CoinAcceptorEvent::Status(text, level) => {
+                                window.set_diag_coin_slots_available(level == 1);
                                 window.set_diag_coin_status(LogEntry {
                                     level,
                                     text: text.into(),
                                 });
+                            }
+                            CoinAcceptorEvent::Slots(slots) => {
+                                slot_model_events.set_vec(
+                                    slots
+                                        .into_iter()
+                                        .map(|slot| CoinSlot {
+                                            position: slot.position.into(),
+                                            coin_id: slot.coin_id.into(),
+                                            value: slot.value,
+                                            enabled: slot.enabled,
+                                            pending: false,
+                                        })
+                                        .collect::<Vec<_>>(),
+                                );
                             }
                         }
                     }
@@ -305,6 +386,52 @@ mod coin_acceptor {
         std::mem::forget(timer);
 
         cmd_tx
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        fn slot_model(enabled: bool) -> VecModel<CoinSlot> {
+            VecModel::from(vec![CoinSlot {
+                position: 6,
+                coin_id: "AM1K0A".into(),
+                value: 10,
+                enabled,
+                pending: false,
+            }])
+        }
+
+        #[test]
+        fn slot_toggle_marks_pending_and_sends_the_one_based_position() {
+            let slots = slot_model(true);
+            let (tx, rx) = channel();
+
+            queue_slot_change(&slots, &tx, 6, false).unwrap();
+
+            assert_eq!(
+                rx.recv().unwrap(),
+                CoinAcceptorCommand::SetSlotEnabled {
+                    position: 6,
+                    enabled: false,
+                }
+            );
+            let slot = slots.row_data(0).unwrap();
+            assert!(!slot.enabled);
+            assert!(slot.pending);
+        }
+
+        #[test]
+        fn failed_slot_toggle_restores_the_displayed_state() {
+            let slots = slot_model(true);
+            let (tx, rx) = channel::<CoinAcceptorCommand>();
+            drop(rx);
+
+            assert!(queue_slot_change(&slots, &tx, 6, false).is_err());
+            let slot = slots.row_data(0).unwrap();
+            assert!(slot.enabled);
+            assert!(!slot.pending);
+        }
     }
 }
 
@@ -997,6 +1124,10 @@ mod diagnostics_handler {
                 if enabled { "enabled" } else { "disabled" }
             );
             health.set_maintenance_mode(enabled);
+            health::save_maintenance_mode(
+                Path::new(health::DEFAULT_MAINTENANCE_STATE_PATH),
+                enabled,
+            );
         });
     }
 }

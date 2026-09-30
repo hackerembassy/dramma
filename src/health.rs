@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 const STALE_AFTER: Duration = Duration::from_secs(30);
 const REBOOT_RETRY: Duration = Duration::from_secs(60);
-/// Consecutive reboots that didn't lead to a single successful poll before
+/// Consecutive reboots that didn't bring every acceptor back before
 /// automatic rebooting gives up; the fault is presumably not fixable by
 /// restarting and needs a human. Survives process restarts via a small file
 /// (see `load_reboot_streak`/`save_reboot_streak`), since a reboot wipes
@@ -18,6 +18,9 @@ const MAX_REBOOT_ATTEMPTS: u32 = 3;
 /// Default path for the persisted reboot streak; relative to the working
 /// directory the service runs from, alongside `data/Stats.db`.
 pub const DEFAULT_REBOOT_STATE_PATH: &str = "data/reboot_watchdog_state";
+/// Default path for the persisted maintenance-mode flag: the file existing
+/// means maintenance mode is on.
+pub const DEFAULT_MAINTENANCE_STATE_PATH: &str = "data/maintenance_mode";
 
 #[derive(Clone, Copy)]
 pub enum Acceptor {
@@ -313,7 +316,6 @@ impl DeviceHealth {
 
     fn update(&self, error: Option<String>, now: Instant) {
         let mut state = self.health.state.lock().unwrap();
-        let recovered = error.is_none();
         let device = &mut state.devices[self.device as usize];
         if error.is_some() {
             // Retrying/opening/resetting must not restart the outage timer.
@@ -323,12 +325,13 @@ impl DeviceHealth {
             device.last_response = Some(now);
         }
         device.error = error;
-        if recovered {
-            // A successful poll is evidence the last reboot (if any) helped;
-            // give the next outage the full retry budget again.
-            state.reboot_streak = 0;
-        }
         if state.devices.iter().all(|device| device.error.is_none()) {
+            // Every acceptor polling again is evidence the last reboot (if
+            // any) helped; give the next outage the full retry budget again.
+            // One acceptor polling while the other stays down proves nothing,
+            // and counting it would let a single unplugged acceptor reboot the
+            // machine forever.
+            state.reboot_streak = 0;
             state.reboot_error = None;
         }
     }
@@ -393,6 +396,31 @@ pub fn save_reboot_streak(path: &Path, streak: u32) {
     }
     if let Err(message) = std::fs::write(path, streak.to_string()) {
         error!("Failed to persist reboot watchdog state to {path:?}: {message}");
+    }
+}
+
+/// Whether maintenance mode was on when the process last stopped, so a reboot
+/// or deploy mid-service doesn't quietly re-arm the reboot watchdog.
+pub fn load_maintenance_mode(path: &Path) -> bool {
+    path.exists()
+}
+
+/// Persists the maintenance-mode flag. Best-effort, like `save_reboot_streak`:
+/// a write failure is logged, not fatal.
+pub fn save_maintenance_mode(path: &Path, enabled: bool) {
+    let result = if enabled {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        std::fs::write(path, "")
+    } else {
+        std::fs::remove_file(path).or_else(|error| match error.kind() {
+            std::io::ErrorKind::NotFound => Ok(()),
+            _ => Err(error),
+        })
+    };
+    if let Err(message) = result {
+        error!("Failed to persist maintenance mode to {path:?}: {message}");
     }
 }
 
@@ -675,6 +703,46 @@ mod tests {
             Ok(())
         });
         assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
+    fn one_acceptor_polling_does_not_reset_the_reboot_streak() {
+        // The bill acceptor keeps polling while the coin acceptor is unplugged;
+        // rebooting isn't helping, so the streak must keep counting.
+        let now = Instant::now();
+        let health = Health::new_at_with_reboot_streak(Duration::from_secs(10), now, 2);
+        health.device(Acceptor::CashCode).update(None, now);
+        assert_eq!(health.reboot_streak(), 2);
+        health.watchdog_tick(now + Duration::from_secs(11), || Ok(()));
+        assert_eq!(health.reboot_streak(), MAX_REBOOT_ATTEMPTS);
+
+        // Next boot: still only the bill acceptor responds, so give up.
+        let now = Instant::now();
+        let health =
+            Health::new_at_with_reboot_streak(Duration::from_secs(10), now, MAX_REBOOT_ATTEMPTS);
+        health.device(Acceptor::CashCode).update(None, now);
+        health.watchdog_tick(now + Duration::from_secs(11), || {
+            panic!("a single missing acceptor must not reboot the machine forever")
+        });
+    }
+
+    #[test]
+    fn maintenance_mode_persistence_round_trips() {
+        let path = std::env::temp_dir().join(format!(
+            "dramma-test-maintenance-mode-{:?}-{}",
+            thread::current().id(),
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+
+        assert!(!load_maintenance_mode(&path), "missing file means off");
+        save_maintenance_mode(&path, true);
+        assert!(load_maintenance_mode(&path));
+        save_maintenance_mode(&path, false);
+        assert!(!load_maintenance_mode(&path));
+        // Switching off when already off is a no-op.
+        save_maintenance_mode(&path, false);
+        assert!(!load_maintenance_mode(&path));
     }
 
     #[test]

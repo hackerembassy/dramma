@@ -8,7 +8,7 @@ import { InsertMoney } from "pages/insert_money.slint";
 import { InsertCoins } from "pages/insert_coins.slint";
 import { Cat } from "pages/cat.slint";
 import { HomeAssistant } from "pages/home_assistant.slint";
-import { Diagnostics, LogEntry } from "pages/diagnostics.slint";
+import { CoinSlot, Diagnostics, LogEntry } from "pages/diagnostics.slint";
 import { DiagnosticsAuth } from "pages/diagnostics_auth.slint";
 import { TechnicalIssue } from "pages/technical_issue.slint";
 
@@ -112,12 +112,15 @@ export component MainWindow inherits Window {
     in-out property <LogEntry> diag-coin-status: { level: 0, text: "Initializing..." };
     in-out property <LogEntry> diag-backend-status: { level: 0, text: "Not checked" };
     in-out property <bool> diag-maintenance-mode: false;
+    in-out property <[CoinSlot]> diag-coin-slots: [];
+    in-out property <bool> diag-coin-slots-available: false;
     callback diag-reset-bills();
     callback diag-reenumerate-coins();
     callback diag-play-sound();
     callback diag-check-backend();
     callback diag-test-printer();
     callback diag-toggle-maintenance-mode(bool);
+    callback diag-toggle-coin-slot(int, bool);
 
     // callbacks for rust to hook into
     callback done-clicked(string, int, int, bool);  // username, fund_id, amount, print_receipt
@@ -350,13 +353,22 @@ export component MainWindow inherits Window {
             coin-status: root.diag-coin-status;
             backend-status: root.diag-backend-status;
             maintenance-mode: root.diag-maintenance-mode;
+            coin-slots: root.diag-coin-slots;
+            coin-slots-available: root.diag-coin-slots-available;
             back-clicked => { root.return-from-diagnostics(); }
             reset-bills => { root.diag-reset-bills(); }
             reenumerate-coins => { root.diag-reenumerate-coins(); }
             play-sound => { root.diag-play-sound(); }
             check-backend => { root.diag-check-backend(); }
             test-printer => { root.diag-test-printer(); }
-            toggle-maintenance-mode(enabled) => { root.diag-toggle-maintenance-mode(enabled); }
+            toggle-maintenance-mode(enabled) => {
+                // The page is rebuilt on every visit, so its switch starts from this.
+                root.diag-maintenance-mode = enabled;
+                root.diag-toggle-maintenance-mode(enabled);
+            }
+            toggle-coin-slot(position, enabled) => {
+                root.diag-toggle-coin-slot(position, enabled);
+            }
         }
 
 

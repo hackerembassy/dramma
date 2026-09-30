@@ -10,6 +10,7 @@
 //! is preserved across reconnects.
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::mpsc::{Receiver, Sender};
 use std::time::Duration;
 
@@ -53,13 +54,29 @@ const MAX_CONSECUTIVE_ERRORS: u32 = 3;
 /// electrical noise from the solenoid/motor and trigger a framing error.
 const POST_CREDIT_DELAY: Duration = Duration::from_millis(800);
 
-#[derive(Debug, Clone)]
+/// One-based positions listed in this file are inhibited. Missing or empty
+/// means every programmed coin slot is enabled.
+pub const DEFAULT_COIN_SLOT_STATE_PATH: &str = "data/cctalk_disabled_coin_slots";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CoinAcceptorCommand {
     Enable,
     Disable,
+    SetSlotEnabled {
+        position: u8,
+        enabled: bool,
+    },
     /// Triggers a USB-level re-enumeration of the coin acceptor (via udevadm)
     /// and forces a reconnect.  Solenoids are clicked once the device is found.
     Reenumerate,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoinSlotInfo {
+    pub position: u8,
+    pub coin_id: String,
+    pub value: i32,
+    pub enabled: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -70,6 +87,126 @@ pub enum CoinAcceptorEvent {
     /// Lifecycle / device-state update for the diagnostics page.
     /// level: 0 = neutral · 1 = ok · 2 = warn · 3 = error
     Status(String, i32),
+    /// Complete, position-sorted snapshot of the programmed coin slots.
+    Slots(Vec<CoinSlotInfo>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ControlState {
+    accepting: bool,
+    /// `true` means the one-based coin position at index + 1 is inhibited.
+    coin_inhibits: [bool; 16],
+}
+
+impl ControlState {
+    fn load(path: &Path) -> Self {
+        Self {
+            accepting: false,
+            coin_inhibits: load_coin_inhibits(path),
+        }
+    }
+
+    fn set_slot_enabled(&mut self, position: u8, enabled: bool) -> Result<(), String> {
+        let Some(index) = position.checked_sub(1).map(usize::from).filter(|&i| i < 16) else {
+            return Err(format!("Invalid ccTalk coin slot position: {position}"));
+        };
+        self.coin_inhibits[index] = !enabled;
+        Ok(())
+    }
+}
+
+fn load_coin_inhibits(path: &Path) -> [bool; 16] {
+    let mut inhibits = [false; 16];
+    let contents = match std::fs::read_to_string(path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return inhibits,
+        Err(error) => {
+            error!("Failed to load disabled ccTalk coin slots from {path:?}: {error}");
+            return inhibits;
+        }
+    };
+
+    for (line_index, line) in contents.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        match line.parse::<usize>() {
+            Ok(position @ 1..=16) => inhibits[position - 1] = true,
+            _ => warn!(
+                "Ignoring invalid ccTalk coin slot {:?} on line {} of {path:?}",
+                line,
+                line_index + 1
+            ),
+        }
+    }
+    inhibits
+}
+
+fn save_coin_inhibits(path: &Path, inhibits: &[bool; 16]) -> std::io::Result<()> {
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let contents = inhibits
+        .iter()
+        .enumerate()
+        .filter_map(|(index, inhibited)| inhibited.then_some(format!("{}\n", index + 1)))
+        .collect::<String>();
+    let temporary = path.with_extension("tmp");
+    std::fs::write(&temporary, contents)?;
+    std::fs::rename(temporary, path)
+}
+
+fn update_slot_intent(
+    state: &mut ControlState,
+    position: u8,
+    enabled: bool,
+    state_path: &Path,
+    event_tx: &Sender<CoinAcceptorEvent>,
+) -> bool {
+    if let Err(message) = state.set_slot_enabled(position, enabled) {
+        error!("{message}");
+        let _ = event_tx.send(CoinAcceptorEvent::Error(message));
+        return false;
+    }
+
+    info!(
+        "ccTalk coin slot {} {} from diagnostics",
+        position,
+        if enabled { "enabled" } else { "disabled" }
+    );
+    if let Err(error) = save_coin_inhibits(state_path, &state.coin_inhibits) {
+        let message = format!("Failed to persist coin slot settings: {error}");
+        error!("{message}");
+        let _ = event_tx.send(CoinAcceptorEvent::Error(message));
+    }
+    true
+}
+
+fn coin_slot_snapshot(
+    coin_values: &HashMap<u8, i32>,
+    coin_ids: &HashMap<u8, String>,
+    inhibits: &[bool; 16],
+) -> Vec<CoinSlotInfo> {
+    let mut slots = coin_values
+        .iter()
+        .filter_map(|(&position, &value)| {
+            let index = usize::from(position.checked_sub(1)?);
+            let &inhibited = inhibits.get(index)?;
+            Some(CoinSlotInfo {
+                position,
+                coin_id: coin_ids
+                    .get(&position)
+                    .cloned()
+                    .unwrap_or_else(|| "configured override".to_string()),
+                value,
+                enabled: !inhibited,
+            })
+        })
+        .collect::<Vec<_>>();
+    slots.sort_by_key(|slot| slot.position);
+    slots
 }
 
 // ---------------------------------------------------------------------------
@@ -109,7 +246,8 @@ pub fn run(
     };
 
     rt.block_on(async move {
-        let mut enabled = false;
+        let state_path = Path::new(DEFAULT_COIN_SLOT_STATE_PATH);
+        let mut state = ControlState::load(state_path);
         let auto = serial_port == AUTO_PORT;
         // Set to true when a Reenumerate command was processed; causes solenoids
         // to be clicked once the next session connects successfully.
@@ -147,7 +285,7 @@ pub fn run(
                 &port,
                 event_tx.clone(),
                 &cmd_rx,
-                &mut enabled,
+                &mut state,
                 &coin_overrides,
                 ping_on_connect,
                 &health,
@@ -179,12 +317,17 @@ pub fn run(
                             format!("Disconnected · reconnecting in {:?}", RECONNECT_DELAY),
                             3,
                         ));
-                        // Drain any queued commands so we capture the latest
-                        // enable/disable intent before sleeping.
+                        // Drain queued commands so the latest global and
+                        // per-slot intent survives the reconnect delay.
                         while let Ok(cmd) = cmd_rx.try_recv() {
                             match cmd {
-                                CoinAcceptorCommand::Enable => enabled = true,
-                                CoinAcceptorCommand::Disable => enabled = false,
+                                CoinAcceptorCommand::Enable => state.accepting = true,
+                                CoinAcceptorCommand::Disable => state.accepting = false,
+                                CoinAcceptorCommand::SetSlotEnabled { position, enabled } => {
+                                    update_slot_intent(
+                                        &mut state, position, enabled, state_path, &event_tx,
+                                    );
+                                }
                                 CoinAcceptorCommand::Reenumerate => {
                                     ping_on_connect = true;
                                     reenumerate_usb().await;
@@ -482,17 +625,18 @@ fn parse_coin_id_amd(id: &str) -> Option<i32> {
 /// Returns `Ok(())` when the upstream event channel is closed (clean shutdown).
 /// Returns `Err` when the connection is lost and a reconnect should be attempted.
 ///
-/// `enabled` is both read (to restore state after a reconnect) and written
-/// (to track the latest inhibit state for the next session).
+/// `state` is both read (to restore state after a reconnect) and written
+/// (to track the latest global and per-slot inhibit state for the next session).
 async fn run_session(
     serial_port: &str,
     event_tx: Sender<CoinAcceptorEvent>,
     cmd_rx: &Receiver<CoinAcceptorCommand>,
-    enabled: &mut bool,
+    state: &mut ControlState,
     coin_overrides: &[[i32; 2]],
     ping_solenoids: bool,
     health: &DeviceHealth,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let state_path = Path::new(DEFAULT_COIN_SLOT_STATE_PATH);
     let (transport_tx, transport_rx) = tokio_mpsc::channel(32);
 
     let transport = CcTalkSerialTransport::new(
@@ -550,6 +694,7 @@ async fn run_session(
     // The library loses the K digit position by extracting all digits first,
     // making "5K0" and "50K" indistinguishable — so we bypass it entirely.
     let mut coin_values: HashMap<u8, i32> = HashMap::new();
+    let mut coin_ids: HashMap<u8, String> = HashMap::new();
     for pos in 1u8..=16 {
         let pkt = match validator.send_command(RequestCoinIdCommand::new(pos)).await {
             Ok(p) => p,
@@ -569,6 +714,7 @@ async fn run_session(
         if &id[..2] == ".." {
             continue; // unsupported slot
         }
+        coin_ids.insert(pos, id.to_string());
         match parse_coin_id_amd(id) {
             Some(amd_value) => {
                 info!("ccTalk coin pos={}: id={:?} → {} AMD", pos, id, amd_value);
@@ -585,7 +731,20 @@ async fn run_session(
 
     // Apply config overrides — these win over the device's coin ID strings.
     for entry in coin_overrides {
-        let pos = entry[0] as u8;
+        let Ok(pos) = u8::try_from(entry[0]) else {
+            warn!(
+                "Ignoring invalid ccTalk coin override position {}",
+                entry[0]
+            );
+            continue;
+        };
+        if !(1..=16).contains(&pos) {
+            warn!(
+                "Ignoring invalid ccTalk coin override position {}",
+                entry[0]
+            );
+            continue;
+        }
         let value = entry[1];
         let prev = coin_values.insert(pos, value);
         info!(
@@ -594,16 +753,16 @@ async fn run_session(
         );
     }
 
-    // Clear any individual coin inhibits the device may have persisted so they
-    // don't silently block coins independently of the master inhibit.
-    validator.set_all_coin_inhibits(false).await?;
-
     // Commands may have arrived during discovery/initialization, including a
-    // Disable from the technical-issue page. Apply the latest intent first.
+    // Disable from the technical-issue page or a diagnostics slot change. Apply
+    // the latest intent before either inhibit register is written.
     while let Ok(cmd) = cmd_rx.try_recv() {
         match cmd {
-            CoinAcceptorCommand::Enable => *enabled = true,
-            CoinAcceptorCommand::Disable => *enabled = false,
+            CoinAcceptorCommand::Enable => state.accepting = true,
+            CoinAcceptorCommand::Disable => state.accepting = false,
+            CoinAcceptorCommand::SetSlotEnabled { position, enabled } => {
+                update_slot_intent(state, position, enabled, state_path, &event_tx);
+            }
             CoinAcceptorCommand::Reenumerate => {
                 health.unavailable("Re-enumerating coin acceptor");
                 reenumerate_usb().await;
@@ -612,8 +771,12 @@ async fn run_session(
         }
     }
 
-    // Start with or restore the desired inhibit state.
-    if *enabled {
+    // The application owns the complete individual mask. Reapply it after every
+    // reset/reconnect before restoring the separate master inhibit state.
+    validator.set_coin_inhibits(state.coin_inhibits).await?;
+
+    // Start with or restore the desired master inhibit state.
+    if state.accepting {
         info!("ccTalk coin acceptor re-enabling after reconnect...");
         validator.disable_master_inhibit().await?;
         info!("ccTalk coin acceptor enabled");
@@ -627,10 +790,19 @@ async fn run_session(
         format!(
             "{} · {}",
             device_label,
-            if *enabled { "Enabled" } else { "Disabled" }
+            if state.accepting {
+                "Enabled"
+            } else {
+                "Disabled"
+            }
         ),
         1,
     ));
+    let _ = event_tx.send(CoinAcceptorEvent::Slots(coin_slot_snapshot(
+        &coin_values,
+        &coin_ids,
+        &state.coin_inhibits,
+    )));
 
     // Click solenoids as confirmation after a re-enumeration reconnect.
     if ping_solenoids {
@@ -653,11 +825,11 @@ async fn run_session(
     let mut consecutive_errors: u32 = 0;
 
     loop {
-        // Process any pending Enable / Disable commands.
+        // Process pending global acceptance and individual slot commands.
         while let Ok(cmd) = cmd_rx.try_recv() {
             match cmd {
-                CoinAcceptorCommand::Enable if !*enabled => {
-                    *enabled = true;
+                CoinAcceptorCommand::Enable if !state.accepting => {
+                    state.accepting = true;
                     // Click the solenoid as an invitation to use the coin machine
                     if let Err(e) = validator
                         .send_command(
@@ -676,8 +848,8 @@ async fn run_session(
                         1,
                     ));
                 }
-                CoinAcceptorCommand::Disable if *enabled => {
-                    *enabled = false;
+                CoinAcceptorCommand::Disable if state.accepting => {
+                    state.accepting = false;
                     info!("Disabling ccTalk coin acceptor...");
                     validator.enable_master_inhibit().await?;
                     info!("ccTalk coin acceptor disabled");
@@ -685,6 +857,16 @@ async fn run_session(
                         format!("{} · Disabled", device_label),
                         1,
                     ));
+                }
+                CoinAcceptorCommand::SetSlotEnabled { position, enabled } => {
+                    if update_slot_intent(state, position, enabled, state_path, &event_tx) {
+                        validator.set_coin_inhibits(state.coin_inhibits).await?;
+                        let _ = event_tx.send(CoinAcceptorEvent::Slots(coin_slot_snapshot(
+                            &coin_values,
+                            &coin_ids,
+                            &state.coin_inhibits,
+                        )));
+                    }
                 }
                 CoinAcceptorCommand::Reenumerate => {
                     health.unavailable("Re-enumerating coin acceptor");
@@ -763,5 +945,94 @@ async fn run_session(
         }
 
         tokio::time::sleep(delay).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state_path(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "dramma-cctalk-{name}-{:?}-{}",
+            std::thread::current().id(),
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn slot_state_is_one_based_and_independent_of_master_acceptance() {
+        let mut state = ControlState {
+            accepting: false,
+            coin_inhibits: [false; 16],
+        };
+
+        state.set_slot_enabled(1, false).unwrap();
+        state.set_slot_enabled(16, false).unwrap();
+        assert!(state.coin_inhibits[0]);
+        assert!(state.coin_inhibits[15]);
+
+        state.accepting = true;
+        state.accepting = false;
+        assert!(state.coin_inhibits[0]);
+        assert!(state.coin_inhibits[15]);
+
+        state.set_slot_enabled(1, true).unwrap();
+        assert!(!state.coin_inhibits[0]);
+        assert!(state.set_slot_enabled(0, true).is_err());
+        assert!(state.set_slot_enabled(17, true).is_err());
+    }
+
+    #[test]
+    fn disabled_slots_persist_and_invalid_lines_are_ignored() {
+        let path = state_path("slot-state");
+        let temporary = path.with_extension("tmp");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&temporary);
+
+        assert_eq!(load_coin_inhibits(&path), [false; 16]);
+
+        let mut inhibits = [false; 16];
+        inhibits[0] = true;
+        inhibits[5] = true;
+        inhibits[15] = true;
+        save_coin_inhibits(&path, &inhibits).unwrap();
+        assert_eq!(load_coin_inhibits(&path), inhibits);
+
+        std::fs::write(&path, "1\n6\n16\n0\n17\ninvalid\n6\n").unwrap();
+        assert_eq!(load_coin_inhibits(&path), inhibits);
+
+        std::fs::remove_file(path).unwrap();
+        let _ = std::fs::remove_file(temporary);
+    }
+
+    #[test]
+    fn slot_snapshot_is_sorted_and_contains_only_programmed_positions() {
+        let coin_values = HashMap::from([(6, 10), (1, 50)]);
+        let coin_ids = HashMap::from([
+            (1, "AM5K0A".to_string()),
+            (6, "AM1K0A".to_string()),
+            (7, "TM000A".to_string()),
+        ]);
+        let mut inhibits = [false; 16];
+        inhibits[5] = true;
+
+        assert_eq!(
+            coin_slot_snapshot(&coin_values, &coin_ids, &inhibits),
+            vec![
+                CoinSlotInfo {
+                    position: 1,
+                    coin_id: "AM5K0A".to_string(),
+                    value: 50,
+                    enabled: true,
+                },
+                CoinSlotInfo {
+                    position: 6,
+                    coin_id: "AM1K0A".to_string(),
+                    value: 10,
+                    enabled: false,
+                },
+            ]
+        );
     }
 }
