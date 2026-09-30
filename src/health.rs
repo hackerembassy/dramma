@@ -42,12 +42,23 @@ struct DeviceState {
     last_response: Option<Instant>,
 }
 
+impl DeviceState {
+    /// When this device's reboot countdown started: the outage start, but never
+    /// before maintenance mode last ended, so an acceptor unplugged for service
+    /// gets the full `restart_after` once staff switch maintenance mode off.
+    fn countdown_since(&self, maintenance_ended: Option<Instant>) -> Option<Instant> {
+        let since = self.unavailable_since?;
+        Some(maintenance_ended.map_or(since, |ended| since.max(ended)))
+    }
+}
+
 struct State {
     devices: [DeviceState; 2],
     last_reboot_attempt: Option<Instant>,
     reboot_requested: bool,
     reboot_error: Option<String>,
     maintenance_since: Option<Instant>,
+    maintenance_ended: Option<Instant>,
     reboot_streak: u32,
 }
 
@@ -119,6 +130,7 @@ impl Health {
                 reboot_requested: false,
                 reboot_error: None,
                 maintenance_since: None,
+                maintenance_ended: None,
                 reboot_streak: initial_reboot_streak,
             })),
             restart_after,
@@ -137,7 +149,9 @@ impl Health {
     }
 
     /// Manually forces the machine unhealthy, independent of acceptor state.
-    /// Does not affect the reboot watchdog, which only watches acceptors.
+    /// Also suspends the reboot watchdog so acceptors can be unplugged for
+    /// service; switching it off restarts the countdown for any acceptor that's
+    /// still unavailable instead of rebooting straight away.
     pub fn set_maintenance_mode(&self, enabled: bool) {
         self.set_maintenance_mode_at(enabled, Instant::now());
     }
@@ -146,8 +160,8 @@ impl Health {
         let mut state = self.state.lock().unwrap();
         if enabled {
             state.maintenance_since.get_or_insert(now);
-        } else {
-            state.maintenance_since = None;
+        } else if state.maintenance_since.take().is_some() {
+            state.maintenance_ended = Some(now);
         }
     }
 
@@ -170,8 +184,14 @@ impl Health {
                     message: message.clone(),
                     unavailable_for_secs: elapsed.as_secs(),
                 });
-                if !self.restart_after.is_zero() {
-                    let remaining = self.restart_after.saturating_sub(elapsed);
+                // No reboot is pending while maintenance mode suspends the watchdog.
+                if !self.restart_after.is_zero() && state.maintenance_since.is_none() {
+                    let counted = now.saturating_duration_since(
+                        device_state
+                            .countdown_since(state.maintenance_ended)
+                            .unwrap(),
+                    );
+                    let remaining = self.restart_after.saturating_sub(counted);
                     restart_in =
                         Some(restart_in.map_or(remaining, |old: Duration| old.min(remaining)));
                 }
@@ -233,15 +253,18 @@ impl Health {
             let mut state = self.state.lock().unwrap();
             Self::expire_stale(&mut state, now);
             if self.restart_after.is_zero()
+                || state.maintenance_since.is_some()
                 || state.reboot_requested
                 || state.reboot_streak >= MAX_REBOOT_ATTEMPTS
                 || state
                     .last_reboot_attempt
                     .is_some_and(|last| now.saturating_duration_since(last) < REBOOT_RETRY)
                 || !state.devices.iter().any(|device| {
-                    device.unavailable_since.is_some_and(|since| {
-                        now.saturating_duration_since(since) >= self.restart_after
-                    })
+                    device
+                        .countdown_since(state.maintenance_ended)
+                        .is_some_and(|since| {
+                            now.saturating_duration_since(since) >= self.restart_after
+                        })
                 })
             {
                 return;
@@ -542,6 +565,59 @@ mod tests {
                 .snapshot_at(now + Duration::from_secs(20))
                 .restart_requested
         );
+    }
+
+    #[test]
+    fn maintenance_mode_suspends_reboots_for_acceptor_outages() {
+        let now = Instant::now();
+        let health = Health::new_at(Duration::from_secs(300), now);
+        healthy(&health, now);
+        health.set_maintenance_mode_at(true, now);
+        // Staff unplug the coin acceptor for service.
+        health
+            .device(Acceptor::CcTalk)
+            .update(Some("unplugged".into()), now + Duration::from_secs(1));
+
+        let later = now + Duration::from_secs(3600);
+        health.watchdog_tick(later, || {
+            panic!("maintenance mode must suspend the reboot watchdog")
+        });
+        assert_eq!(health.snapshot_at(later).restart_in_secs, None);
+    }
+
+    #[test]
+    fn leaving_maintenance_mode_restarts_the_reboot_countdown() {
+        let now = Instant::now();
+        let health = Health::new_at(Duration::from_secs(300), now);
+        healthy(&health, now);
+        health.set_maintenance_mode_at(true, now);
+        health
+            .device(Acceptor::CcTalk)
+            .update(Some("unplugged".into()), now + Duration::from_secs(1));
+
+        // Maintenance ends with the acceptor still down: a full grace period
+        // instead of an immediate reboot, while the outage is still reported
+        // in full.
+        let ended = now + Duration::from_secs(3600);
+        health.set_maintenance_mode_at(false, ended);
+        let snapshot = health.snapshot_at(ended);
+        assert_eq!(snapshot.restart_in_secs, Some(300));
+        assert!(
+            snapshot
+                .errors
+                .iter()
+                .any(|error| error.component == "cctalk" && error.unavailable_for_secs == 3599)
+        );
+
+        health.watchdog_tick(ended + Duration::from_secs(299), || {
+            panic!("leaving maintenance mode must restart the countdown")
+        });
+        let calls = Cell::new(0);
+        health.watchdog_tick(ended + Duration::from_secs(300), || {
+            calls.set(calls.get() + 1);
+            Ok(())
+        });
+        assert_eq!(calls.get(), 1);
     }
 
     #[test]

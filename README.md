@@ -71,6 +71,12 @@ tracked in `data/reboot_watchdog_state` (survives reboots since the process's
 own memory doesn't) and resets the moment either acceptor has a successful
 poll — delete that file to reset it manually.
 
+**Maintenance Mode** (a switch in the diagnostics panel) takes the kiosk out of
+service on demand: it shows the technical-issue screen and reports unhealthy to
+Home Assistant. While it's on, the watchdog never reboots, so acceptors can be
+unplugged for service. Switching it off restarts the full timeout for any
+acceptor that's still unavailable instead of rebooting immediately.
+
 Both deployment methods install a sudoers rule allowing the kiosk user only
 `/usr/bin/systemctl --no-block reboot`. For an existing installation, run the
 permission installer as root before starting the updated binary:
@@ -106,6 +112,49 @@ Example attributes on failure:
   "restart_requested": false
 }
 ```
+
+## Coin acceptor maintenance
+
+The coin acceptor is an NRI G-13 (ccTalk). dramma credits each coin by the
+value in its coin ID, read from the device on connect: the value is in luma
+with `K` marking thousands, so `AM1K0A` = 10 ֏ and `AM10KA` = 100 ֏. Turn on
+Maintenance Mode before unplugging the acceptor from the kiosk, so the watchdog
+doesn't reboot the machine while it's gone.
+
+`scripts/cctalk-tool.py` talks to the acceptor directly (needs `pyserial`; stop
+dramma first, since the serial port is opened exclusively):
+
+```bash
+python3 scripts/cctalk-tool.py info             # device info + coin table
+python3 scripts/cctalk-tool.py --say watch      # accept coins, announce each credit/reject
+python3 scripts/cctalk-tool.py set-id 5 AM1K0A  # relabel a position (persists)
+```
+
+This G-13 has ccTalk teach mode disabled, so new coins are taught with the
+lower DIL switch block S2 on its back (NRI G-13.mft ccTalk manual, pp. 31–33).
+Positions 5–12 are the teach slots (`TM000A` when empty), taught by S2.1–S2.8
+in order. Position 5 holds the current 10 ֏ coin and position 6 the old, larger
+10 ֏ coin. The factory slots (positions 1–4) can't be re-taught this way, and a
+coin one of them partly rejects can't get a second slot either, since it overlaps;
+adjusting a factory slot needs NRI's WinEMP software.
+
+1. Set S2.1–S2.10 OFF, then S2.9 ON (teach mode) and the slot's switch ON.
+2. Insert every specimen of the coin you have, each 2–3 times (at least 10
+   insertions). The gate clacks once after the 10th.
+3. Set S2.9 OFF to save: one clack means saved, two means an error (usually
+   overlap with a known coin).
+4. Set the slot's switch OFF again — in normal operation S2.1–S2.8 inhibit the
+   teach slots.
+5. `set-id` the position, then confirm with `watch`, which reports the position
+   and value of every credited coin. Do this before dramma sees the acceptor:
+   it keeps coins from an unlabelled (`TM000A`) slot but credits 0 ֏.
+
+Teach and test with the acceptor mounted vertically — the manual allows only ±2°,
+so ideally do it in the kiosk. A tilted acceptor measures coins differently:
+factory slots reject genuine coins, and a slot taught tilted may reject coins
+once mounted. On the bench, also keep the bottom outlets clear: a coin that can't
+leave the cash-box outlet blocks the credit sensor, and the return lever can't
+free it.
 
 ---
 
