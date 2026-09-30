@@ -37,7 +37,7 @@ export component MainWindow inherits Window {
     callback resume-current-page();
     resume-current-page => {
         if root.acceptors-available {
-            if current-page == Page.InsertMoney || current-page == Page.Cat {
+            if current-page == Page.InsertMoney || (current-page == Page.Cat && !root.cat-printing) {
                 root.start-accepting-money();
                 root.enter-insert-money();
             } else if current-page == Page.InsertCoins {
@@ -92,10 +92,13 @@ export component MainWindow inherits Window {
     // confetti state
     in-out property <bool> show-confetti: false;
     in-out property <bool> confetti-falling: false;
+    in-out property <bool> cat-printing: false;
+    property <int> cat-print-amount: 0;
     // inactivity countdown (seconds remaining, updated by Rust)
     in-out property <int> inactivity-seconds-left: 180;
     // read by Rust to guard inactivity timeout from firing on wrong page
-    out property <bool> on-insert-money-page: acceptors-available && (current-page == Page.InsertMoney || current-page == Page.Cat);
+    out property <bool> on-insert-money-page: acceptors-available
+        && (current-page == Page.InsertMoney || (current-page == Page.Cat && !root.cat-printing));
 
     // toast state — set by Rust when a bill or coin is accepted
     in-out property <int> last-added-amount: 0;
@@ -127,6 +130,19 @@ export component MainWindow inherits Window {
     // callbacks for rust to hook into
     callback done-clicked(string, int, int, bool);  // username, fund_id, amount, print_receipt
     callback print-cat-clicked(int);  // amount
+    callback cat-print-finished();
+    cat-print-finished => {
+        if root.cat-printing {
+            root.cat-printing = false;
+            root.session-amount = 0;
+            root.current-page = Page.Main;
+            if root.cat-print-amount > 0 {
+                root.show-confetti = true;
+                root.confetti-started();
+            }
+            root.cat-print-amount = 0;
+        }
+    }
     callback start-accepting-money();
     callback stop-accepting-money();
     callback show-home-assistant();
@@ -199,6 +215,8 @@ export component MainWindow inherits Window {
             cat-clicked => {
                 root.session-amount = 0;
                 root.last-added-amount = 0;
+                root.cat-printing = false;
+                root.cat-print-amount = 0;
                 root.start-accepting-money();
                 root.current-page = Page.Cat;
                 root.enter-insert-money();
@@ -301,17 +319,20 @@ export component MainWindow inherits Window {
         if current-page == Page.Cat: Cat {
             current-amount: root.session-amount;
             seconds-left: root.inactivity-seconds-left;
+            printing: root.cat-printing;
 
             // Reset inactivity timer whenever a bill is accepted
             changed current-amount => {
-                if self.current-amount > 0 {
+                if self.current-amount > 0 && !root.cat-printing {
                     root.activity-on-insert-money();
                 }
             }
 
             // Reset inactivity timer on any screen tap
             screen-tapped => {
-                root.activity-on-insert-money();
+                if !root.cat-printing {
+                    root.activity-on-insert-money();
+                }
             }
             last-added-amount <=> root.last-added-amount;
 
@@ -323,14 +344,12 @@ export component MainWindow inherits Window {
             }
 
             print-clicked(amount) => {
-                root.leave-insert-money();
-                root.stop-accepting-money();
-                root.print-cat-clicked(amount);
-                root.session-amount = 0;
-                root.current-page = Page.Main;
-                if amount > 0 {
-                    root.show-confetti = true;
-                    root.confetti-started();
+                if !root.cat-printing {
+                    root.leave-insert-money();
+                    root.stop-accepting-money();
+                    root.cat-print-amount = amount;
+                    root.cat-printing = true;
+                    root.print-cat-clicked(amount);
                 }
             }
         }

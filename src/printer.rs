@@ -3,7 +3,7 @@ use serialport::SerialPort;
 use std::io::{Read, Write};
 use std::sync::mpsc::{Sender, channel};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::receipt_render::{self, ReceiptData};
 
@@ -12,6 +12,11 @@ pub enum PrinterCommand {
     Raw(Vec<u8>),
     TestReceipt,
     Receipt(ReceiptData),
+    ReceiptWithCompletion {
+        data: ReceiptData,
+        deadline: Instant,
+        reply: Sender<Result<(), String>>,
+    },
     Status(Sender<Result<PrinterStatus, String>>),
 }
 
@@ -58,6 +63,26 @@ pub struct Printer {
     port_name: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum QueuedPaperStatus {
+    Ready,
+    PaperOut,
+}
+
+fn decode_queued_paper_status(status: u8) -> Option<QueuedPaperStatus> {
+    let valid_near_end = matches!(status & 0x03, 0 | 0x03);
+    let valid_paper_end = matches!(status & 0x0c, 0 | 0x0c);
+    if status & 0x90 != 0 || !valid_near_end || !valid_paper_end {
+        return None;
+    }
+
+    Some(if status & 0x0c == 0 {
+        QueuedPaperStatus::Ready
+    } else {
+        QueuedPaperStatus::PaperOut
+    })
+}
+
 impl Printer {
     pub fn new(port_name: impl Into<String>) -> Self {
         Self {
@@ -85,6 +110,45 @@ impl Printer {
         Ok(())
     }
 
+    /// Print a payload and wait until the printer has processed the cut at its end.
+    ///
+    /// `GS r 1` is deliberately used instead of a real-time status request: the
+    /// TP80NB executes it only after all earlier bytes in its receive buffer have
+    /// been processed. Appending it after the receipt's cut command therefore
+    /// gives callers a completion barrier instead of merely confirming that the
+    /// USB driver accepted the bytes.
+    pub fn print_raw_and_wait(
+        &self,
+        data: &[u8],
+        deadline: Instant,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut port = self.open_port()?;
+        port.clear(serialport::ClearBuffer::Input)?;
+        port.set_timeout(remaining_time(deadline)?)?;
+
+        port.write_all(data)?;
+        port.write_all(b"\x1d\x72\x01")?; // GS r 1: queued paper-sensor status
+        port.flush()?;
+
+        loop {
+            port.set_timeout(remaining_time(deadline)?)?;
+            let mut response = [0u8; 1];
+            port.read_exact(&mut response)?;
+
+            // A raster image can contain bytes that resemble a real-time DLE
+            // status command. Those replies have bit 4 set; ignore them and
+            // wait for the queued GS r paper-status response instead.
+            let status = response[0];
+            match decode_queued_paper_status(status) {
+                Some(QueuedPaperStatus::Ready) => return Ok(()),
+                Some(QueuedPaperStatus::PaperOut) => {
+                    return Err(std::io::Error::other("receipt printer is out of paper").into());
+                }
+                None => {}
+            }
+        }
+    }
+
     /// Query the four standard ESC/POS real-time status bytes.
     pub fn status(&self) -> Result<PrinterStatus, Box<dyn std::error::Error>> {
         let mut port = self.open_port()?;
@@ -99,6 +163,16 @@ impl Printer {
         }
 
         Ok(PrinterStatus::from_realtime_bytes(status)?)
+    }
+}
+
+fn remaining_time(deadline: Instant) -> Result<Duration, std::io::Error> {
+    match deadline.checked_duration_since(Instant::now()) {
+        Some(remaining) if !remaining.is_zero() => Ok(remaining),
+        _ => Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "timed out waiting for receipt printer",
+        )),
     }
 }
 
@@ -132,6 +206,28 @@ pub fn init(port_name: String) -> Sender<PrinterCommand> {
                     if let Err(e) = printer.print_raw(&payload) {
                         error!("Failed to print receipt: {}", e);
                     }
+                }
+                PrinterCommand::ReceiptWithCompletion {
+                    data,
+                    deadline,
+                    reply,
+                } => {
+                    info!(
+                        "Printing receipt for @{} and waiting for completion",
+                        data.username
+                    );
+                    let result = if Instant::now() >= deadline {
+                        Err("print request expired before reaching the printer".to_string())
+                    } else {
+                        let payload = receipt_render::render_receipt_to_escpos(&data);
+                        printer
+                            .print_raw_and_wait(&payload, deadline)
+                            .map_err(|error| error.to_string())
+                    };
+                    if let Err(error) = &result {
+                        error!("Failed to complete receipt print: {}", error);
+                    }
+                    let _ = reply.send(result);
                 }
                 PrinterCommand::Status(reply) => {
                     let status = printer.status().map_err(|error| error.to_string());
@@ -180,5 +276,28 @@ mod tests {
     fn rejects_non_status_input() {
         let error = PrinterStatus::from_realtime_bytes([0x16, 0x12, b'A', 0x12]).unwrap_err();
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn recognizes_queued_completion_status() {
+        assert_eq!(
+            decode_queued_paper_status(0x00),
+            Some(QueuedPaperStatus::Ready)
+        );
+        assert_eq!(
+            decode_queued_paper_status(0x03),
+            Some(QueuedPaperStatus::Ready)
+        );
+        assert_eq!(
+            decode_queued_paper_status(0x0c),
+            Some(QueuedPaperStatus::PaperOut)
+        );
+    }
+
+    #[test]
+    fn queued_completion_ignores_realtime_status_bytes() {
+        for status in [0x12, 0x16, 0x1a, 0x72] {
+            assert_eq!(decode_queued_paper_status(status), None);
+        }
     }
 }

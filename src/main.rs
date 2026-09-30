@@ -632,8 +632,39 @@ mod fund_fetcher {
 
 mod donation_handler {
     use super::*;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::mpsc::{RecvTimeoutError, channel};
 
     const INACTIVITY_TIMEOUT: Duration = Duration::from_mins(2); // 2 minutes
+    const CAT_PRINT_TIMEOUT: Duration = Duration::from_secs(30);
+
+    fn finish_cat_print(
+        weak: slint::Weak<MainWindow>,
+        generation: Arc<AtomicU64>,
+        operation_id: u64,
+        result: Result<(), String>,
+    ) {
+        if generation
+            .compare_exchange(
+                operation_id,
+                operation_id.wrapping_add(1),
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            )
+            .is_err()
+        {
+            return;
+        }
+
+        match result {
+            Ok(()) => info!("🐱 Cat receipt finished printing"),
+            Err(error) => warn!("🐱 Cat print ended before confirmation: {}", error),
+        }
+        if let Some(window) = weak.upgrade() {
+            window.invoke_cat_print_finished();
+        }
+    }
 
     /// Spawns a single-shot inactivity timer. Returns the Timer (must be kept alive).
     fn spawn_inactivity_timer(
@@ -729,6 +760,7 @@ mod donation_handler {
         // Using Rc<RefCell<>> because all callbacks run on the single Slint event-loop thread.
         let inactivity_timer: Rc<RefCell<Option<slint::Timer>>> = Rc::new(RefCell::new(None));
         let countdown_ticker: Rc<RefCell<Option<slint::Timer>>> = Rc::new(RefCell::new(None));
+        let cat_print_generation = Arc::new(AtomicU64::new(0));
 
         let app_weak = app.as_weak();
         app.on_done_clicked({
@@ -798,8 +830,14 @@ mod donation_handler {
             let cashcode_tx = cashcode_tx.clone();
             let cctalk_tx = cctalk_tx.clone();
             let printer_tx = printer_tx.clone();
+            let app_weak = app_weak.clone();
+            let cat_print_generation = cat_print_generation.clone();
             move |amount| {
                 info!("🐱 Print-a-cat clicked! Amount inserted: {} AMD", amount);
+                let deadline = Instant::now() + CAT_PRINT_TIMEOUT;
+                let operation_id = cat_print_generation
+                    .fetch_add(1, Ordering::SeqCst)
+                    .wrapping_add(1);
 
                 if cashcode_tx
                     .send(bill_acceptor::CashCodeCommand::Disable)
@@ -816,12 +854,21 @@ mod donation_handler {
                     );
                 }
 
-                let printer_tx = printer_tx.clone();
-                slint::spawn_local(async move {
-                    if amount > 0 {
-                        sound::play_yippee();
-                    }
+                let timeout_weak = app_weak.clone();
+                let timeout_generation = cat_print_generation.clone();
+                slint::Timer::single_shot(CAT_PRINT_TIMEOUT, move || {
+                    finish_cat_print(
+                        timeout_weak,
+                        timeout_generation,
+                        operation_id,
+                        Err("30-second timeout reached".to_string()),
+                    );
+                });
 
+                let printer_tx = printer_tx.clone();
+                let completion_weak = app_weak.clone();
+                let completion_generation = cat_print_generation.clone();
+                slint::spawn_local(async move {
                     let cat_img = match cat_fetch::fetch_cat_image().await {
                         Ok(img) => Some(img),
                         Err(e) => {
@@ -830,8 +877,56 @@ mod donation_handler {
                         }
                     };
 
+                    // The timeout may have fired while the image request was in
+                    // flight. Do not enqueue a stale cat after returning home.
+                    if completion_generation.load(Ordering::SeqCst) != operation_id {
+                        info!(
+                            "🐱 Cat image arrived after the print request expired; discarding it"
+                        );
+                        return;
+                    }
+
                     let receipt_data = receipt_render::ReceiptData::new_cat(amount, cat_img);
-                    let _ = printer_tx.send(printer::PrinterCommand::Receipt(receipt_data));
+                    let (reply_tx, reply_rx) = channel();
+                    if printer_tx
+                        .send(printer::PrinterCommand::ReceiptWithCompletion {
+                            data: receipt_data,
+                            deadline,
+                            reply: reply_tx,
+                        })
+                        .is_err()
+                    {
+                        finish_cat_print(
+                            completion_weak,
+                            completion_generation,
+                            operation_id,
+                            Err("printer worker unavailable".to_string()),
+                        );
+                        return;
+                    }
+
+                    thread::spawn(move || {
+                        let wait = deadline.saturating_duration_since(Instant::now());
+                        let result = match reply_rx.recv_timeout(wait) {
+                            Ok(result) => result,
+                            Err(RecvTimeoutError::Timeout) => {
+                                Err("30-second timeout reached".to_string())
+                            }
+                            Err(RecvTimeoutError::Disconnected) => {
+                                Err("printer worker stopped before replying".to_string())
+                            }
+                        };
+                        if let Err(error) = slint::invoke_from_event_loop(move || {
+                            finish_cat_print(
+                                completion_weak,
+                                completion_generation,
+                                operation_id,
+                                result,
+                            );
+                        }) {
+                            error!("Failed to report cat print completion to the UI: {}", error);
+                        }
+                    });
                 })
                 .unwrap();
             }
