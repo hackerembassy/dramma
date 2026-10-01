@@ -576,12 +576,10 @@ pub fn render_receipt_to_escpos(data: &ReceiptData) -> Vec<u8> {
         }
     }
 
-    // Feed extra blank paper and don't cut at all. This printer's cutter is a
-    // V-shaped blade — mechanically full-cut-only, so GS V 1 (partial cut)
-    // has no effect; it still severs the receipt completely. Skipping the
-    // cut command entirely is the only way to keep the receipt attached to
-    // the roll, with enough feed to leave a margin the user can tear by hand.
-    buf.extend_from_slice(b"\n\n\n\n\n\n\n\n");
+    // Feed extra blank paper, then cut. The HPRT TP80NB-L buffers raster jobs
+    // until it receives GS V 0; neither line feeds nor the ESC/POS FF end-job
+    // command release them on this firmware.
+    buf.extend_from_slice(b"\n\n\n\n\n\n\n\n\x1D\x56\x00");
 
     buf
 }
@@ -595,6 +593,7 @@ mod tests {
         let data = ReceiptData::new_test_print();
         let escpos = render_receipt_to_escpos(&data);
         assert!(!escpos.is_empty());
+        assert!(escpos.ends_with(b"\n\n\n\n\n\n\n\n\x1D\x56\x00"));
     }
 
     #[test]

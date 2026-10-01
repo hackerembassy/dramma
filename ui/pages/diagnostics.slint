@@ -6,21 +6,34 @@ export struct LogEntry {
     text: string,
 }
 
+export struct CoinSlot {
+    position: int,
+    coin-id: string,
+    value: int,
+    enabled: bool,
+    pending: bool,
+}
+
 export component Diagnostics inherits Rectangle {
     callback back-clicked();
     callback reset-bills();
     callback reenumerate-coins();
     callback play-sound();
     callback check-backend();
+    callback check-printer();
     callback test-printer();
     callback toggle-maintenance-mode(bool);
+    callback toggle-coin-slot(int, bool);
 
 
     in-out property <[LogEntry]> log-lines: [];
     in property <LogEntry> bill-status: { level: 0, text: "Initializing..." };
     in property <LogEntry> coin-status: { level: 0, text: "Initializing..." };
+    in property <LogEntry> printer-status: { level: 0, text: "Checking..." };
     in property <LogEntry> backend-status: { level: 0, text: "Not checked" };
     in property <bool> maintenance-mode: false;
+    in property <[CoinSlot]> coin-slots: [];
+    in property <bool> coin-slots-available: false;
 
     // Action buttons are locked for a brief moment after the page appears so
     // that the tap gesture that opened diagnostics cannot accidentally trigger them.
@@ -43,6 +56,23 @@ export component Diagnostics inherits Rectangle {
         interval: 1s;
         running: true;
         triggered => { if root.seconds-left > 0 { root.seconds-left -= 1; } }
+    }
+
+    // Query immediately after the page appears, then keep the status fresh
+    // while this diagnostics component exists.
+    property <bool> initial-printer-check: true;
+    Timer {
+        interval: 100ms;
+        running: root.initial-printer-check;
+        triggered => {
+            root.initial-printer-check = false;
+            root.check-printer();
+        }
+    }
+    Timer {
+        interval: 3s;
+        running: true;
+        triggered => { root.check-printer(); }
     }
 
     // Background TouchArea — any tap resets the inactivity timer.
@@ -176,7 +206,7 @@ export component Diagnostics inherits Rectangle {
             border-width: 1px;
             border-color: Palette.color-scheme == ColorScheme.dark ? #444444 : #cccccc;
             background: Palette.color-scheme == ColorScheme.dark ? #1c1c1c : #f6f6f6;
-            height: 118px;
+            height: 150px;
 
             VerticalLayout {
                 padding: 10px;
@@ -245,6 +275,37 @@ export component Diagnostics inherits Rectangle {
                     }
                 }
 
+                // Receipt printer row
+                HorizontalLayout {
+                    spacing: 8px;
+                    height: 26px;
+                    Text {
+                        text: "Receipt printer";
+                        font-size: 13px;
+                        color: Palette.foreground;
+                        opacity: 0.55;
+                        width: 130px;
+                        vertical-alignment: center;
+                    }
+                    Rectangle {
+                        width: 10px;
+                        height: 10px;
+                        border-radius: 5px;
+                        y: (parent.height - self.height) / 2;
+                        background: root.printer-status.level == 1 ? #4caf50 :
+                                    root.printer-status.level == 2 ? #ff8c00 :
+                                    root.printer-status.level == 3 ? #f44336 : #808080;
+                    }
+                    Text {
+                        text: root.printer-status.text;
+                        font-size: 13px;
+                        color: Palette.foreground;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                        overflow: elide;
+                    }
+                }
+
                 // Backend API row
                 HorizontalLayout {
                     spacing: 8px;
@@ -284,6 +345,103 @@ export component Diagnostics inherits Rectangle {
                             inactivity-timer.running = true;
                             root.seconds-left = 120;
                             root.check-backend();
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Individual coin slots ─────────────────────────────────────────
+        Rectangle {
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Palette.color-scheme == ColorScheme.dark ? #444444 : #cccccc;
+            background: Palette.color-scheme == ColorScheme.dark ? #1c1c1c : #f6f6f6;
+            height: root.coin-slots.length == 0
+                ? 70px
+                : 46px + floor((root.coin-slots.length + 1) / 2) * 38px;
+
+            Text {
+                x: 10px;
+                y: 8px;
+                width: parent.width - 20px;
+                height: 24px;
+                text: "Accepted coin slots";
+                font-size: 15px;
+                font-weight: 600;
+                color: Palette.foreground;
+                vertical-alignment: center;
+            }
+
+            if root.coin-slots.length == 0: Text {
+                x: 10px;
+                y: 34px;
+                width: parent.width - 20px;
+                height: 24px;
+                text: root.coin-slots-available
+                    ? "No programmed coin slots found"
+                    : "Waiting for coin acceptor...";
+                font-size: 13px;
+                color: Palette.foreground;
+                opacity: 0.6;
+                vertical-alignment: center;
+            }
+
+            for slot[i] in root.coin-slots: Rectangle {
+                x: 10px + mod(i, 2) * ((parent.width - 30px) / 2 + 10px);
+                y: 38px + floor(i / 2) * 38px;
+                width: (parent.width - 30px) / 2;
+                height: 32px;
+                border-radius: 5px;
+                background: Palette.color-scheme == ColorScheme.dark ? #ffffff0a : #00000008;
+                opacity: slot.pending ? 0.65 : 1;
+
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    spacing: 8px;
+
+                    Text {
+                        text: "Slot " + slot.position;
+                        width: 58px;
+                        font-size: 13px;
+                        font-weight: 600;
+                        color: Palette.foreground;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: slot.value + " ֏";
+                        width: 72px;
+                        font-size: 13px;
+                        color: Palette.foreground;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: slot.coin-id;
+                        horizontal-stretch: 1;
+                        font-size: 12px;
+                        color: Palette.foreground;
+                        opacity: 0.6;
+                        overflow: elide;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: slot.pending ? "Applying..." : "";
+                        width: 68px;
+                        font-size: 11px;
+                        color: Palette.foreground;
+                        opacity: 0.6;
+                        vertical-alignment: center;
+                        horizontal-alignment: right;
+                    }
+                    Switch {
+                        checked: slot.enabled;
+                        enabled: !root.guard && root.coin-slots-available && !slot.pending;
+                        toggled => {
+                            inactivity-timer.running = false;
+                            inactivity-timer.running = true;
+                            root.seconds-left = 120;
+                            root.toggle-coin-slot(slot.position, self.checked);
                         }
                     }
                 }

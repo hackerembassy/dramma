@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 const STALE_AFTER: Duration = Duration::from_secs(30);
 const REBOOT_RETRY: Duration = Duration::from_secs(60);
-/// Consecutive reboots that didn't lead to a single successful poll before
+/// Consecutive reboots that didn't bring every acceptor back before
 /// automatic rebooting gives up; the fault is presumably not fixable by
 /// restarting and needs a human. Survives process restarts via a small file
 /// (see `load_reboot_streak`/`save_reboot_streak`), since a reboot wipes
@@ -18,6 +18,9 @@ const MAX_REBOOT_ATTEMPTS: u32 = 3;
 /// Default path for the persisted reboot streak; relative to the working
 /// directory the service runs from, alongside `data/Stats.db`.
 pub const DEFAULT_REBOOT_STATE_PATH: &str = "data/reboot_watchdog_state";
+/// Default path for the persisted maintenance-mode flag: the file existing
+/// means maintenance mode is on.
+pub const DEFAULT_MAINTENANCE_STATE_PATH: &str = "data/maintenance_mode";
 
 #[derive(Clone, Copy)]
 pub enum Acceptor {
@@ -42,12 +45,23 @@ struct DeviceState {
     last_response: Option<Instant>,
 }
 
+impl DeviceState {
+    /// When this device's reboot countdown started: the outage start, but never
+    /// before maintenance mode last ended, so an acceptor unplugged for service
+    /// gets the full `restart_after` once staff switch maintenance mode off.
+    fn countdown_since(&self, maintenance_ended: Option<Instant>) -> Option<Instant> {
+        let since = self.unavailable_since?;
+        Some(maintenance_ended.map_or(since, |ended| since.max(ended)))
+    }
+}
+
 struct State {
     devices: [DeviceState; 2],
     last_reboot_attempt: Option<Instant>,
     reboot_requested: bool,
     reboot_error: Option<String>,
     maintenance_since: Option<Instant>,
+    maintenance_ended: Option<Instant>,
     reboot_streak: u32,
 }
 
@@ -119,6 +133,7 @@ impl Health {
                 reboot_requested: false,
                 reboot_error: None,
                 maintenance_since: None,
+                maintenance_ended: None,
                 reboot_streak: initial_reboot_streak,
             })),
             restart_after,
@@ -137,7 +152,9 @@ impl Health {
     }
 
     /// Manually forces the machine unhealthy, independent of acceptor state.
-    /// Does not affect the reboot watchdog, which only watches acceptors.
+    /// Also suspends the reboot watchdog so acceptors can be unplugged for
+    /// service; switching it off restarts the countdown for any acceptor that's
+    /// still unavailable instead of rebooting straight away.
     pub fn set_maintenance_mode(&self, enabled: bool) {
         self.set_maintenance_mode_at(enabled, Instant::now());
     }
@@ -146,8 +163,8 @@ impl Health {
         let mut state = self.state.lock().unwrap();
         if enabled {
             state.maintenance_since.get_or_insert(now);
-        } else {
-            state.maintenance_since = None;
+        } else if state.maintenance_since.take().is_some() {
+            state.maintenance_ended = Some(now);
         }
     }
 
@@ -170,8 +187,14 @@ impl Health {
                     message: message.clone(),
                     unavailable_for_secs: elapsed.as_secs(),
                 });
-                if !self.restart_after.is_zero() {
-                    let remaining = self.restart_after.saturating_sub(elapsed);
+                // No reboot is pending while maintenance mode suspends the watchdog.
+                if !self.restart_after.is_zero() && state.maintenance_since.is_none() {
+                    let counted = now.saturating_duration_since(
+                        device_state
+                            .countdown_since(state.maintenance_ended)
+                            .unwrap(),
+                    );
+                    let remaining = self.restart_after.saturating_sub(counted);
                     restart_in =
                         Some(restart_in.map_or(remaining, |old: Duration| old.min(remaining)));
                 }
@@ -233,15 +256,18 @@ impl Health {
             let mut state = self.state.lock().unwrap();
             Self::expire_stale(&mut state, now);
             if self.restart_after.is_zero()
+                || state.maintenance_since.is_some()
                 || state.reboot_requested
                 || state.reboot_streak >= MAX_REBOOT_ATTEMPTS
                 || state
                     .last_reboot_attempt
                     .is_some_and(|last| now.saturating_duration_since(last) < REBOOT_RETRY)
                 || !state.devices.iter().any(|device| {
-                    device.unavailable_since.is_some_and(|since| {
-                        now.saturating_duration_since(since) >= self.restart_after
-                    })
+                    device
+                        .countdown_since(state.maintenance_ended)
+                        .is_some_and(|since| {
+                            now.saturating_duration_since(since) >= self.restart_after
+                        })
                 })
             {
                 return;
@@ -290,7 +316,6 @@ impl DeviceHealth {
 
     fn update(&self, error: Option<String>, now: Instant) {
         let mut state = self.health.state.lock().unwrap();
-        let recovered = error.is_none();
         let device = &mut state.devices[self.device as usize];
         if error.is_some() {
             // Retrying/opening/resetting must not restart the outage timer.
@@ -300,12 +325,13 @@ impl DeviceHealth {
             device.last_response = Some(now);
         }
         device.error = error;
-        if recovered {
-            // A successful poll is evidence the last reboot (if any) helped;
-            // give the next outage the full retry budget again.
-            state.reboot_streak = 0;
-        }
         if state.devices.iter().all(|device| device.error.is_none()) {
+            // Every acceptor polling again is evidence the last reboot (if
+            // any) helped; give the next outage the full retry budget again.
+            // One acceptor polling while the other stays down proves nothing,
+            // and counting it would let a single unplugged acceptor reboot the
+            // machine forever.
+            state.reboot_streak = 0;
             state.reboot_error = None;
         }
     }
@@ -370,6 +396,31 @@ pub fn save_reboot_streak(path: &Path, streak: u32) {
     }
     if let Err(message) = std::fs::write(path, streak.to_string()) {
         error!("Failed to persist reboot watchdog state to {path:?}: {message}");
+    }
+}
+
+/// Whether maintenance mode was on when the process last stopped, so a reboot
+/// or deploy mid-service doesn't quietly re-arm the reboot watchdog.
+pub fn load_maintenance_mode(path: &Path) -> bool {
+    path.exists()
+}
+
+/// Persists the maintenance-mode flag. Best-effort, like `save_reboot_streak`:
+/// a write failure is logged, not fatal.
+pub fn save_maintenance_mode(path: &Path, enabled: bool) {
+    let result = if enabled {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        std::fs::write(path, "")
+    } else {
+        std::fs::remove_file(path).or_else(|error| match error.kind() {
+            std::io::ErrorKind::NotFound => Ok(()),
+            _ => Err(error),
+        })
+    };
+    if let Err(message) = result {
+        error!("Failed to persist maintenance mode to {path:?}: {message}");
     }
 }
 
@@ -545,6 +596,59 @@ mod tests {
     }
 
     #[test]
+    fn maintenance_mode_suspends_reboots_for_acceptor_outages() {
+        let now = Instant::now();
+        let health = Health::new_at(Duration::from_secs(300), now);
+        healthy(&health, now);
+        health.set_maintenance_mode_at(true, now);
+        // Staff unplug the coin acceptor for service.
+        health
+            .device(Acceptor::CcTalk)
+            .update(Some("unplugged".into()), now + Duration::from_secs(1));
+
+        let later = now + Duration::from_secs(3600);
+        health.watchdog_tick(later, || {
+            panic!("maintenance mode must suspend the reboot watchdog")
+        });
+        assert_eq!(health.snapshot_at(later).restart_in_secs, None);
+    }
+
+    #[test]
+    fn leaving_maintenance_mode_restarts_the_reboot_countdown() {
+        let now = Instant::now();
+        let health = Health::new_at(Duration::from_secs(300), now);
+        healthy(&health, now);
+        health.set_maintenance_mode_at(true, now);
+        health
+            .device(Acceptor::CcTalk)
+            .update(Some("unplugged".into()), now + Duration::from_secs(1));
+
+        // Maintenance ends with the acceptor still down: a full grace period
+        // instead of an immediate reboot, while the outage is still reported
+        // in full.
+        let ended = now + Duration::from_secs(3600);
+        health.set_maintenance_mode_at(false, ended);
+        let snapshot = health.snapshot_at(ended);
+        assert_eq!(snapshot.restart_in_secs, Some(300));
+        assert!(
+            snapshot
+                .errors
+                .iter()
+                .any(|error| error.component == "cctalk" && error.unavailable_for_secs == 3599)
+        );
+
+        health.watchdog_tick(ended + Duration::from_secs(299), || {
+            panic!("leaving maintenance mode must restart the countdown")
+        });
+        let calls = Cell::new(0);
+        health.watchdog_tick(ended + Duration::from_secs(300), || {
+            calls.set(calls.get() + 1);
+            Ok(())
+        });
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
     fn stops_rebooting_after_max_attempts_without_recovery() {
         // Each "boot" is a fresh Health instance carrying forward only the
         // persisted reboot streak, matching how main.rs seeds it after an
@@ -599,6 +703,46 @@ mod tests {
             Ok(())
         });
         assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
+    fn one_acceptor_polling_does_not_reset_the_reboot_streak() {
+        // The bill acceptor keeps polling while the coin acceptor is unplugged;
+        // rebooting isn't helping, so the streak must keep counting.
+        let now = Instant::now();
+        let health = Health::new_at_with_reboot_streak(Duration::from_secs(10), now, 2);
+        health.device(Acceptor::CashCode).update(None, now);
+        assert_eq!(health.reboot_streak(), 2);
+        health.watchdog_tick(now + Duration::from_secs(11), || Ok(()));
+        assert_eq!(health.reboot_streak(), MAX_REBOOT_ATTEMPTS);
+
+        // Next boot: still only the bill acceptor responds, so give up.
+        let now = Instant::now();
+        let health =
+            Health::new_at_with_reboot_streak(Duration::from_secs(10), now, MAX_REBOOT_ATTEMPTS);
+        health.device(Acceptor::CashCode).update(None, now);
+        health.watchdog_tick(now + Duration::from_secs(11), || {
+            panic!("a single missing acceptor must not reboot the machine forever")
+        });
+    }
+
+    #[test]
+    fn maintenance_mode_persistence_round_trips() {
+        let path = std::env::temp_dir().join(format!(
+            "dramma-test-maintenance-mode-{:?}-{}",
+            thread::current().id(),
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+
+        assert!(!load_maintenance_mode(&path), "missing file means off");
+        save_maintenance_mode(&path, true);
+        assert!(load_maintenance_mode(&path));
+        save_maintenance_mode(&path, false);
+        assert!(!load_maintenance_mode(&path));
+        // Switching off when already off is a no-op.
+        save_maintenance_mode(&path, false);
+        assert!(!load_maintenance_mode(&path));
     }
 
     #[test]

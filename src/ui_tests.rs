@@ -156,3 +156,43 @@ fn diagnostics_auth_page_reopens_on_repeat_entry() {
         "should have navigated to DiagnosticsAuth (2nd time)"
     );
 }
+
+#[test]
+fn cat_page_waits_for_print_completion_before_returning_home() {
+    let adapter = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
+    slint::platform::set_platform(Box::new(TestPlatform(adapter.clone()))).unwrap();
+    let app = MainWindow::new().unwrap();
+    adapter.set_size(slint::PhysicalSize::new(1280, 1024));
+    app.show().unwrap();
+    app.invoke_acceptor_health_changed(true);
+
+    let print_requests = Rc::new(Cell::new(0));
+    app.on_print_cat_clicked({
+        let print_requests = print_requests.clone();
+        move |_| print_requests.set(print_requests.get() + 1)
+    });
+    let celebrations = Rc::new(Cell::new(0));
+    app.on_confetti_started({
+        let celebrations = celebrations.clone();
+        move || celebrations.set(celebrations.get() + 1)
+    });
+
+    // Open Print-a-cat from the first card in the second row.
+    tap(&app, 275., 700.);
+    let _ = app.window().take_snapshot();
+    app.set_session_amount(100);
+
+    // Press the large Print button.
+    tap(&app, 640., 580.);
+    assert_eq!(print_requests.get(), 1);
+    assert!(app.get_cat_printing());
+    assert_eq!(app.get_session_amount(), 100);
+    assert_eq!(celebrations.get(), 0);
+    assert!(!app.get_on_insert_money_page());
+
+    app.invoke_cat_print_finished();
+    assert!(!app.get_cat_printing());
+    assert_eq!(app.get_session_amount(), 0);
+    assert_eq!(celebrations.get(), 1);
+    assert!(!app.get_on_insert_money_page());
+}
