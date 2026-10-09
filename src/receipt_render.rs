@@ -213,7 +213,7 @@ pub fn render_receipt_canvas(data: &ReceiptData) -> RgbImage {
     // --- TITLE SECTION ---
     let title_text = match data.kind {
         ReceiptKind::TestPrint => ">>           TEST PRINT           <<",
-        ReceiptKind::CatReceipt => ">>      I JUST WANNA A CAT!      <<",
+        ReceiptKind::CatReceipt => ">>      I JUST WANT A CAT!       <<",
         _ => ">>            RECEIPT            <<",
     };
     draw_text_mut(
