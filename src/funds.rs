@@ -116,7 +116,10 @@ pub async fn fetch_open_funds(token: &str) -> Result<Vec<Fund>, RequestError> {
 }
 
 /// Fetches single fund details from the API asynchronously
-pub async fn fetch_fund_detail(token: &str, fund_id: i32) -> Result<FundDetailResponse, RequestError> {
+pub async fn fetch_fund_detail(
+    token: &str,
+    fund_id: i32,
+) -> Result<FundDetailResponse, RequestError> {
     let url = format!("https://gateway.hackem.cc/api/funds/{}", fund_id);
 
     let request = Request::get(&url)
@@ -290,7 +293,10 @@ pub fn render_donut_chart(
                         }
 
                         // Thin dark separator line between adjacent slices
-                        let arc_dist_to_boundary = slices.iter().map(|s| (frac - s.1).abs()).fold(1.0, f64::min);
+                        let arc_dist_to_boundary = slices
+                            .iter()
+                            .map(|s| (frac - s.1).abs())
+                            .fold(1.0, f64::min);
                         let separator_threshold = 0.75 / (2.0 * std::f64::consts::PI * r_outer);
                         if slices.len() > 1 && arc_dist_to_boundary < separator_threshold {
                             c = [18, 20, 24, 255];
@@ -324,7 +330,7 @@ pub fn format_amount(val: f64) -> String {
     for (i, c) in s.chars().enumerate() {
         result.push(c);
         let rem = len - 1 - i;
-        if rem > 0 && rem % 3 == 0 {
+        if rem > 0 && rem.is_multiple_of(3) {
             result.push(' ');
         }
     }

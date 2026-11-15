@@ -526,9 +526,8 @@ mod fund_fetcher {
 
         let Some(ref token) = config.token else {
             warn!("⚠️  No token loaded, donation functions unavailable");
-            app_handle.set_available_funds(slint::ModelRc::new(slint::VecModel::<
-                FundItem,
-            >::default()));
+            app_handle
+                .set_available_funds(slint::ModelRc::new(slint::VecModel::<FundItem>::default()));
             app_handle
                 .set_available_fund_ids(slint::ModelRc::new(slint::VecModel::<i32>::default()));
 
@@ -612,10 +611,9 @@ mod fund_fetcher {
                     }
                     Err(e) => {
                         error!("❌ Failed to fetch funds: {}", e);
-                        app.set_available_funds(slint::ModelRc::new(slint::VecModel::<
-                            FundItem,
-                        >::default(
-                        )));
+                        app.set_available_funds(slint::ModelRc::new(
+                            slint::VecModel::<FundItem>::default(),
+                        ));
                         app.set_available_fund_ids(slint::ModelRc::new(
                             slint::VecModel::<i32>::default(),
                         ));
