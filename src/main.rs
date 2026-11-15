@@ -1343,6 +1343,34 @@ mod diagnostics_handler {
                 enabled,
             );
         });
+
+        app.on_diag_toggle_feature_space(move |enabled| {
+            info!(
+                "🛠️ Diagnostics: feature 'Space controls' {}",
+                if enabled { "enabled" } else { "disabled" }
+            );
+        });
+
+        app.on_diag_toggle_feature_games(move |enabled| {
+            info!(
+                "🛠️ Diagnostics: feature 'Play games' {}",
+                if enabled { "enabled" } else { "disabled" }
+            );
+        });
+
+        app.on_diag_toggle_feature_cat(move |enabled| {
+            info!(
+                "🛠️ Diagnostics: feature 'Print-a-cat' {}",
+                if enabled { "enabled" } else { "disabled" }
+            );
+        });
+
+        app.on_diag_toggle_feature_member(move |enabled| {
+            info!(
+                "🛠️ Diagnostics: feature 'Member controls' {}",
+                if enabled { "enabled" } else { "disabled" }
+            );
+        });
     }
 }
 

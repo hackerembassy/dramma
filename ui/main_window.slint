@@ -118,6 +118,14 @@ export component MainWindow inherits Window {
     in-out property <bool> diag-maintenance-mode: false;
     in-out property <[CoinSlot]> diag-coin-slots: [];
     in-out property <bool> diag-coin-slots-available: false;
+    in-out property <bool> feature-space-enabled: true;
+    in-out property <bool> feature-games-enabled: true;
+    in-out property <bool> feature-cat-enabled: true;
+    in-out property <bool> feature-member-enabled: false;
+    callback diag-toggle-feature-space(bool);
+    callback diag-toggle-feature-games(bool);
+    callback diag-toggle-feature-cat(bool);
+    callback diag-toggle-feature-member(bool);
     callback diag-reset-bills();
     callback diag-reenumerate-coins();
     callback diag-play-sound();
@@ -196,6 +204,11 @@ export component MainWindow inherits Window {
         visible: !root.showing-technical-issue;
         background: #000000;
         if current-page == Page.Main: Main {
+            feature-space-enabled: root.feature-space-enabled;
+            feature-games-enabled: root.feature-games-enabled;
+            feature-cat-enabled: root.feature-cat-enabled;
+            feature-member-enabled: root.feature-member-enabled;
+
             donate-clicked => {
                 root.current-page = Page.Donate;
             }
@@ -376,6 +389,10 @@ export component MainWindow inherits Window {
             maintenance-mode: root.diag-maintenance-mode;
             coin-slots: root.diag-coin-slots;
             coin-slots-available: root.diag-coin-slots-available;
+            feature-space-enabled <=> root.feature-space-enabled;
+            feature-games-enabled <=> root.feature-games-enabled;
+            feature-cat-enabled <=> root.feature-cat-enabled;
+            feature-member-enabled <=> root.feature-member-enabled;
             back-clicked => { root.return-from-diagnostics(); }
             reset-bills => { root.diag-reset-bills(); }
             reenumerate-coins => { root.diag-reenumerate-coins(); }
@@ -390,6 +407,22 @@ export component MainWindow inherits Window {
             }
             toggle-coin-slot(position, enabled) => {
                 root.diag-toggle-coin-slot(position, enabled);
+            }
+            toggle-feature-space(enabled) => {
+                root.feature-space-enabled = enabled;
+                root.diag-toggle-feature-space(enabled);
+            }
+            toggle-feature-games(enabled) => {
+                root.feature-games-enabled = enabled;
+                root.diag-toggle-feature-games(enabled);
+            }
+            toggle-feature-cat(enabled) => {
+                root.feature-cat-enabled = enabled;
+                root.diag-toggle-feature-cat(enabled);
+            }
+            toggle-feature-member(enabled) => {
+                root.feature-member-enabled = enabled;
+                root.diag-toggle-feature-member(enabled);
             }
         }
 

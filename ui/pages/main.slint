@@ -34,12 +34,20 @@ component FeatureCard inherits Rectangle {
     drop-shadow-blur: 20px;
     drop-shadow-color: enabled ? accent.with-alpha(0.15) : transparent;
     drop-shadow-offset-y: 6px;
-    opacity: enabled ? 1.0 : 0.4;
+    opacity: enabled ? 1.0 : 0.7;
 
     animate border-color { duration: 200ms; easing: ease-out; }
     animate drop-shadow-color { duration: 200ms; easing: ease-out; }
     animate opacity { duration: 200ms; easing: ease-out; }
 
+    clip: true;
+
+    if !enabled: Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../assets/diagonal-grid.svg");
+        image-fit: fill;
+    }
 
     VerticalLayout {
         padding: 24px;
@@ -55,13 +63,14 @@ component FeatureCard inherits Rectangle {
                 text: icon;
                 font-size: root.width > 400px ? 40px : 34px;
                 vertical-alignment: center;
+                opacity: enabled ? 1.0 : 0.6;
             }
 
             Text {
                 text: label;
                 font-size: root.width > 400px ? 26px : 21px;
                 font-weight: 700;
-                color: Theme.text-primary;
+                color: enabled ? Theme.text-primary : Theme.text-muted;
                 vertical-alignment: center;
             }
         }
@@ -100,6 +109,11 @@ export component Main inherits Rectangle {
     callback play-clicked();
     callback cat-clicked();
     callback secret-tapped();
+
+    in property <bool> feature-space-enabled: true;
+    in property <bool> feature-games-enabled: true;
+    in property <bool> feature-cat-enabled: true;
+    in property <bool> feature-member-enabled: false;
 
     property <int> tap-count: 0;
     tap-reset := Timer {
@@ -210,6 +224,7 @@ export component Main inherits Rectangle {
                     icon: "🏠";
                     label: "Control Space";
                     description: "Manage lights, climate & more\nvia Home Assistant.";
+                    enabled: root.feature-space-enabled;
                     clicked => { root.home-assistant-clicked(); }
                 }
 
@@ -218,6 +233,7 @@ export component Main inherits Rectangle {
                     icon: "🎮";
                     label: "Play Games";
                     description: "Insert coins and enjoy\nretro games on the machine!";
+                    enabled: root.feature-games-enabled;
                     clicked => { root.play-clicked(); }
                 }
 
@@ -226,6 +242,7 @@ export component Main inherits Rectangle {
                     icon: "🐈";
                     label: "Print-a-cat";
                     description: "Get a random cat receipt!\nActive even for 0 ֏.";
+                    enabled: root.feature-cat-enabled;
                     clicked => { root.cat-clicked(); }
                 }
 
@@ -234,7 +251,7 @@ export component Main inherits Rectangle {
                     icon: "👤";
                     label: "Member space";
                     description: "Manage embassy memberships.\nWork in progress.";
-                    enabled: false;
+                    enabled: root.feature-member-enabled;
                 }
             }
         }
