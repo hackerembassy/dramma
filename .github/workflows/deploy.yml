@@ -47,7 +47,7 @@ jobs:
 
   build:
     name: Build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
@@ -226,7 +226,7 @@ jobs:
           ssh root@${{ env.DRAMMA_HOST }} \
             "rm -f /home/${{ env.DRAMMA_USER }}/.config/autostart/xhost-root.desktop"
 
-      - name: Enable and start service
+      - name: Enable and restart service
         run: |
           ssh root@${{ env.DRAMMA_HOST }} "usermod -a -G dialout ${{ env.DRAMMA_USER }}"
           ssh root@${{ env.DRAMMA_HOST }} "loginctl enable-linger ${{ env.DRAMMA_USER }}"
@@ -237,12 +237,34 @@ jobs:
                XDG_RUNTIME_DIR=/run/user/\$(id -u ${{ env.DRAMMA_USER }}) \
                systemctl --user enable dramma.service && \
                XDG_RUNTIME_DIR=/run/user/\$(id -u ${{ env.DRAMMA_USER }}) \
-               systemctl --user start dramma.service'"
+               systemctl --user restart dramma.service'"
 
       - name: Verify service is running
         run: |
-          sleep 3
+          echo "Waiting for dramma.service to become active..."
+          for i in {1..15}; do
+            STATUS=$(ssh root@${{ env.DRAMMA_HOST }} \
+              "su - ${{ env.DRAMMA_USER }} -c \
+                'XDG_RUNTIME_DIR=/run/user/\$(id -u ${{ env.DRAMMA_USER }}) \
+                 systemctl --user is-active dramma.service'" || true)
+            echo "[$i/15] Service status: $STATUS"
+            if [ "$STATUS" = "active" ]; then
+              echo "✅ dramma.service is active!"
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "❌ dramma.service failed to become active!"
+          echo "=== systemctl --user status dramma.service ==="
           ssh root@${{ env.DRAMMA_HOST }} \
             "su - ${{ env.DRAMMA_USER }} -c \
               'XDG_RUNTIME_DIR=/run/user/\$(id -u ${{ env.DRAMMA_USER }}) \
-               systemctl --user is-active dramma.service'"
+               systemctl --user status dramma.service'" || true
+
+          echo "=== journalctl --user -u dramma.service -n 100 ==="
+          ssh root@${{ env.DRAMMA_HOST }} \
+            "su - ${{ env.DRAMMA_USER }} -c \
+              'XDG_RUNTIME_DIR=/run/user/\$(id -u ${{ env.DRAMMA_USER }}) \
+               journalctl --user -u dramma.service -n 100 --no-pager'" || true
+          exit 1
