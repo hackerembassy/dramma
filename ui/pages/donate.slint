@@ -1,18 +1,113 @@
 import { VirtualKeyboardHandler, VirtualKeyboard, KeyModel } from "../virtual_keyboard.slint";
-import { LineEdit, Button, Palette, ComboBox } from "std-widgets.slint";
-import { VirtualKeyboardHandler } from "../virtual_keyboard.slint";
+import { LineEdit, Button, Palette } from "std-widgets.slint";
 import { AutocompleteLineEdit } from "../autocomplete_line_edit.slint";
 import { Icons } from "../icons.slint";
 
+export struct FundItem {
+    id: int,
+    name: string,
+    target-value: int,
+    collected-value: int,
+    target-currency: string,
+    percent: int,
+    summary-text: string,
+    donut: image,
+}
+
+component FundCard inherits Rectangle {
+    in property <FundItem> fund;
+    in property <bool> is-selected;
+    callback clicked();
+
+    width: 250px;
+    height: 310px;
+    border-radius: 12px;
+    background: root.is-selected ? #223044 : #1a1c22;
+    border-width: root.is-selected ? 2.5px : 1.5px;
+    border-color: root.is-selected ? #4a90e2 : #2f3542;
+    clip: true;
+
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 6px;
+        alignment: space-between;
+
+        // Donut image with percentage inside the center hole
+        Rectangle {
+            height: 180px;
+            width: 180px;
+            horizontal-stretch: 0;
+
+            Image {
+                width: 100%;
+                height: 100%;
+                source: root.fund.donut;
+            }
+
+            // Center content inside donut hole
+            VerticalLayout {
+                alignment: center;
+                spacing: 1px;
+                Text {
+                    text: root.fund.percent + "%";
+                    font-size: 22px;
+                    font-weight: 700;
+                    color: root.is-selected ? #ffffff : #dddddd;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: "funded";
+                    font-size: 12px;
+                    color: #888888;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+
+        // Fund name
+        Text {
+            text: root.fund.name;
+            font-size: 15px;
+            font-weight: 600;
+            color: root.is-selected ? #ffffff : #e0e0e0;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            wrap: word-wrap;
+            max-height: 42px;
+            overflow: elide;
+        }
+
+        // Funding numbers: e.g. "473 539 / 800 000 AMD"
+        Text {
+            text: root.fund.summary-text;
+            font-size: 13px;
+            color: root.is-selected ? #99c2ff : #9aa0a6;
+            horizontal-alignment: center;
+            overflow: elide;
+        }
+    }
+}
+
 export component Donate inherits Rectangle {
     in-out property <string> username: "";
-    in property <[string]> fund-items: [];
-    in property <[int]> fund-ids: [];
+    in property <[FundItem]> fund-items: [];
     in-out property <int> selected-fund-index: -1;
     in property <[string]> username-suggestions: [];
 
     callback fetch-funds();
     callback fetch-usernames();
+
+    changed fund-items => {
+        if (root.selected-fund-index < 0 && root.fund-items.length > 0) {
+            root.selected-fund-index = 0;
+        }
+    }
 
     init => {
         username-input.set-input-focus();
@@ -37,48 +132,54 @@ export component Donate inherits Rectangle {
         }
     }
 
-    callback next-clicked(string, int);  // username, fund_id
+    callback next-clicked(string, int, string);  // username, fund_id, fund_name
     callback back-clicked();
 
     background: #000000;
 
     VerticalLayout {
         alignment: start;
-        padding: 32px;
-        spacing: 24px;
+        padding-top: 16px;
+        padding-left: 24px;
+        padding-right: 24px;
+        padding-bottom: 16px;
+        spacing: 12px;
 
-        // back button
+        // Top header bar: Back button on left, Make a Donation centered at the top
         HorizontalLayout {
-            alignment: start;
+            alignment: stretch;
+            height: 56px;
 
             Button {
                 text: "← Back";
                 width: 150px;
-                height: 60px;
+                height: 56px;
+                horizontal-stretch: 0;
 
                 clicked => {
                     root.back-clicked();
                 }
             }
-        }
 
-        // header
-        Text {
-            text: "Make a Donation";
-            font-size: 32px;
-            font-weight: 700;
-            color: Palette.foreground;
-            horizontal-alignment: center;
-        }
+            Text {
+                text: "Make a Donation";
+                font-size: 32px;
+                font-weight: 700;
+                color: Palette.foreground;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
 
-        // spacer
-        Rectangle {
-            height: 20px;
+            Rectangle {
+                width: 150px;
+                horizontal-stretch: 0;
+            }
         }
 
         // fund selector section
         VerticalLayout {
-            spacing: 12px;
+            spacing: 6px;
 
             Text {
                 text: "Select fund:";
@@ -87,17 +188,109 @@ export component Donate inherits Rectangle {
                 horizontal-alignment: left;
             }
 
-            fund-selector := ComboBox {
-                model: root.fund-items;
-                current-index <=> root.selected-fund-index;
-                enabled: root.fund-items.length > 0;
-                height: 60px;
+            if root.fund-items.length == 0: Rectangle {
+                height: 140px;
+                background: #181a1f;
+                border-radius: 10px;
+                border-width: 1px;
+                border-color: #2a2a2a;
+
+                Text {
+                    text: "Loading funds...";
+                    font-size: 18px;
+                    color: #888888;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
             }
+
+            if root.fund-items.length > 0: HorizontalLayout {
+                spacing: 10px;
+                height: 310px;
+                alignment: center;
+
+                // Left scroll arrow button (full height of cards)
+                Rectangle {
+                    width: 52px;
+                    height: 310px;
+                    border-radius: 12px;
+                    background: left-touch.pressed ? #2c384a : (left-touch.has-hover ? #222b38 : #181a20);
+                    border-width: 1.5px;
+                    border-color: #2f3542;
+                    opacity: funds-flickable.viewport-x < 0px ? 1.0 : 0.25;
+
+                    Image {
+                        source: Icons.arrow-left;
+                        width: 28px;
+                        height: 28px;
+                        colorize: Palette.foreground;
+                    }
+
+                    left-touch := TouchArea {
+                        enabled: funds-flickable.viewport-x < 0px;
+                        clicked => {
+                            funds-flickable.viewport-x = min(0px, funds-flickable.viewport-x + 280px);
+                        }
+                    }
+                }
+
+                // Scrollable donut cards carousel
+                funds-flickable := Flickable {
+                    height: 310px;
+                    viewport-height: 310px;
+                    horizontal-stretch: 1;
+
+                    HorizontalLayout {
+                        padding-left: 2px;
+                        padding-right: 2px;
+                        spacing: 16px;
+                        alignment: start;
+
+                        for fund[i] in root.fund-items: FundCard {
+                            fund: fund;
+                            is-selected: root.selected-fund-index == i;
+                            clicked => {
+                                root.selected-fund-index = i;
+                            }
+                        }
+                    }
+                }
+
+                // Right scroll arrow button (full height of cards)
+                Rectangle {
+                    width: 52px;
+                    height: 310px;
+                    border-radius: 12px;
+                    background: right-touch.pressed ? #2c384a : (right-touch.has-hover ? #222b38 : #181a20);
+                    border-width: 1.5px;
+                    border-color: #2f3542;
+                    opacity: (funds-flickable.viewport-width + funds-flickable.viewport-x > funds-flickable.width) ? 1.0 : 0.25;
+
+                    Image {
+                        source: Icons.arrow-right;
+                        width: 28px;
+                        height: 28px;
+                        colorize: Palette.foreground;
+                    }
+
+                    right-touch := TouchArea {
+                        enabled: funds-flickable.viewport-width + funds-flickable.viewport-x > funds-flickable.width;
+                        clicked => {
+                            funds-flickable.viewport-x = max(funds-flickable.width - funds-flickable.viewport-width, funds-flickable.viewport-x - 280px);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Spacer to push username input and action buttons down
+        Rectangle {
+            vertical-stretch: 1;
         }
 
         // username input section
         VerticalLayout {
-            spacing: 12px;
+            spacing: 6px;
 
             HorizontalLayout {
                 alignment: start;
@@ -111,7 +304,7 @@ export component Donate inherits Rectangle {
             }
 
             Rectangle {
-                height: 60px;
+                height: 54px;
                 border-radius: 8px;
                 border-width: 2px;
                 border-color: username-input.has-focus ? #4a90e2 : #cccccc;
@@ -142,20 +335,15 @@ export component Donate inherits Rectangle {
             }
         }
 
-        // spacer to push button to bottom
-        Rectangle {
-            vertical-stretch: 1;
-        }
-
-        // next button
+        // Action buttons
         HorizontalLayout {
             alignment: LayoutAlignment.space-between;
 
             anon-button := Button {
                 icon: Icons.guy-fawkes;
                 text: "Anonymous";
-                width: 350px;
-                height: 120px;
+                width: 320px;
+                height: 70px;
 
                 enabled: root.username != "anon";
 
@@ -170,13 +358,14 @@ export component Donate inherits Rectangle {
             next-button := Button {
                 text: "Next ➜";
                 primary: true;
-                enabled: username-input.is-valid && root.selected-fund-index >= 0;
-                width: 350px;
-                height: 120px;
+                enabled: username-input.is-valid && root.selected-fund-index >= 0 && root.selected-fund-index < root.fund-items.length;
+                width: 320px;
+                height: 70px;
 
                 clicked => {
-                    if (root.selected-fund-index >= 0 && root.selected-fund-index < root.fund-ids.length) {
-                        root.next-clicked(root.username, root.fund-ids[root.selected-fund-index]);
+                    if (root.selected-fund-index >= 0 && root.selected-fund-index < root.fund-items.length) {
+                        let selected-fund = root.fund-items[root.selected-fund-index];
+                        root.next-clicked(root.username, selected-fund.id, selected-fund.name);
                     }
                 }
             }
