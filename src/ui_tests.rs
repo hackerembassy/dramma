@@ -55,13 +55,13 @@ fn outage_blocks_payments_preserves_credit_and_keeps_diagnostics_accessible() {
         )
         .unwrap();
     }
-    tap(&app, 1050., 470.);
+    tap(&app, 490., 700.);
     assert_eq!(starts.get(), 0);
 
     app.invoke_acceptor_health_changed(true);
     assert!(!app.get_showing_technical_issue());
-    // The Play Games card in the main menu.
-    tap(&app, 1050., 470.);
+    // The Play Games card in the second row.
+    tap(&app, 490., 700.);
     assert!(app.get_on_insert_coins_page());
     assert_eq!(starts.get(), 1);
     app.set_session_amount(500);
@@ -177,8 +177,8 @@ fn cat_page_waits_for_print_completion_before_returning_home() {
         move || celebrations.set(celebrations.get() + 1)
     });
 
-    // Open Print-a-cat from the first card in the second row.
-    tap(&app, 275., 700.);
+    // Open Print-a-cat from the third card in the second row.
+    tap(&app, 785., 700.);
     let _ = app.window().take_snapshot();
     app.set_session_amount(100);
 

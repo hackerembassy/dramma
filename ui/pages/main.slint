@@ -25,7 +25,7 @@ component FeatureCard inherits Rectangle {
 
     property <float> hover-factor: 0;
 
-    width: 340px;
+    width: 270px;
     height: 220px;
     border-radius: 18px;
     background: Theme.card-bg;
@@ -42,7 +42,7 @@ component FeatureCard inherits Rectangle {
 
 
     VerticalLayout {
-        padding: 28px;
+        padding: 24px;
         spacing: 10px;
         alignment: start;
 
@@ -53,13 +53,13 @@ component FeatureCard inherits Rectangle {
 
             Text {
                 text: icon;
-                font-size: 36px;
+                font-size: root.width > 400px ? 40px : 34px;
                 vertical-alignment: center;
             }
 
             Text {
                 text: label;
-                font-size: 22px;
+                font-size: root.width > 400px ? 26px : 21px;
                 font-weight: 700;
                 color: Theme.text-primary;
                 vertical-alignment: center;
@@ -68,7 +68,7 @@ component FeatureCard inherits Rectangle {
 
         // Divider
         Rectangle {
-            width: 48px;
+            width: root.width > 400px ? 64px : 44px;
             height: 2px;
             background: enabled ? accent.with-alpha(0.6) : Theme.card-border;
             x: 0px;
@@ -76,7 +76,7 @@ component FeatureCard inherits Rectangle {
 
         Text {
             text: description;
-            font-size: 15px;
+            font-size: root.width > 400px ? 16px : 14px;
             color: Theme.text-muted;
             wrap: word-wrap;
         }
@@ -192,12 +192,18 @@ export component Main inherits Rectangle {
                 spacing: 24px;
 
                 FeatureCard {
+                    width: 564px;
                     accent: Theme.accent-donate;
                     icon: "💸";
                     label: "Donate";
                     description: "Support Hacker Embassy directly.\nEvery coin counts!";
                     clicked => { root.donate-clicked(); }
                 }
+            }
+
+            HorizontalLayout {
+                alignment: center;
+                spacing: 24px;
 
                 FeatureCard {
                     accent: Theme.accent-hass;
@@ -214,11 +220,6 @@ export component Main inherits Rectangle {
                     description: "Insert coins and enjoy\nretro games on the machine!";
                     clicked => { root.play-clicked(); }
                 }
-            }
-
-            HorizontalLayout {
-                alignment: center;
-                spacing: 24px;
 
                 FeatureCard {
                     accent: Theme.accent-cat;
@@ -234,12 +235,6 @@ export component Main inherits Rectangle {
                     label: "Member space";
                     description: "Manage embassy memberships.\nWork in progress.";
                     enabled: false;
-                }
-
-                // Spacer card so row 2 aligns under row 1 columns
-                Rectangle {
-                    width: 340px;
-                    height: 220px;
                 }
             }
         }
