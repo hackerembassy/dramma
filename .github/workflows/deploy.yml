@@ -27,7 +27,7 @@ env:
 jobs:
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     if: ${{ !inputs.skip_tests }}
     steps:
       - uses: actions/checkout@v4
@@ -43,6 +43,8 @@ jobs:
             libasound2-dev
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: "u2204"
       - run: cargo test --all-features
 
   build:
@@ -64,6 +66,8 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: "u2204"
 
       - name: Build release binary
         run: cargo build --release
