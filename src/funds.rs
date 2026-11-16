@@ -252,6 +252,7 @@ pub fn render_donut_chart(
     let r_inner_sq = r_inner * r_inner;
     let cx = (width as f64) / 2.0;
     let cy = (height as f64) / 2.0;
+    let separator_threshold = 0.75 / (2.0 * std::f64::consts::PI * r_outer);
 
     // 2x supersampling for smooth antialiased circles
     let samples = 2;
@@ -281,25 +282,22 @@ pub fn render_donut_chart(
                         }
                         let frac = angle / (2.0 * std::f64::consts::PI);
 
+                        let slice_idx = slices
+                            .partition_point(|s| s.1 <= frac)
+                            .min(slices.len().saturating_sub(1));
                         let mut c = [0u8, 0, 0, 0];
-                        for &(s_start, s_end, color) in &slices {
-                            if frac >= s_start && frac < s_end {
-                                c = color;
-                                break;
-                            }
-                        }
-                        if c[3] == 0 && !slices.is_empty() {
-                            c = slices.last().unwrap().2;
-                        }
 
-                        // Thin dark separator line between adjacent slices
-                        let arc_dist_to_boundary = slices
-                            .iter()
-                            .map(|s| (frac - s.1).abs())
-                            .fold(1.0, f64::min);
-                        let separator_threshold = 0.75 / (2.0 * std::f64::consts::PI * r_outer);
-                        if slices.len() > 1 && arc_dist_to_boundary < separator_threshold {
-                            c = [18, 20, 24, 255];
+                        if let Some(&(s_start, s_end, color)) = slices.get(slice_idx) {
+                            c = color;
+
+                            // Thin dark separator line between adjacent slices
+                            if slices.len() > 1 {
+                                let arc_dist_to_boundary =
+                                    (frac - s_start).abs().min((s_end - frac).abs());
+                                if arc_dist_to_boundary < separator_threshold {
+                                    c = [18, 20, 24, 255];
+                                }
+                            }
                         }
 
                         r_acc += c[0] as f64;

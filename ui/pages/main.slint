@@ -92,6 +92,7 @@ component FeatureCard inherits Rectangle {
     }
 
     TouchArea {
+        enabled: root.enabled;
         mouse-cursor: enabled ? pointer : default;
         clicked => { if enabled { root.clicked(); } }
         pointer-event(e) => {
