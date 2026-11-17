@@ -526,9 +526,8 @@ mod fund_fetcher {
 
         let Some(ref token) = config.token else {
             warn!("⚠️  No token loaded, donation functions unavailable");
-            app_handle.set_available_funds(slint::ModelRc::new(slint::VecModel::<
-                slint::SharedString,
-            >::default()));
+            app_handle
+                .set_available_funds(slint::ModelRc::new(slint::VecModel::<FundItem>::default()));
             app_handle
                 .set_available_fund_ids(slint::ModelRc::new(slint::VecModel::<i32>::default()));
 
@@ -538,14 +537,14 @@ mod fund_fetcher {
         let token = token.clone();
         let token_usernames = token.clone();
         app.on_fetch_funds(move || {
-            info!("🔍 Fetching funds from API...");
+            info!("🔍 Fetching detailed funds from API...");
             let app = app_handle.clone_strong();
             let token = token.clone();
 
             slint::spawn_local(async move {
-                match funds::fetch_funds(&token).await {
+                match funds::fetch_detailed_funds(&token).await {
                     Ok(mut value) => {
-                        info!("✅ Fetched {} funds", value.len());
+                        info!("✅ Fetched {} detailed funds", value.len());
 
                         // Sort so that funds containing "Аренда" come first
                         value.sort_by(|a, b| {
@@ -558,15 +557,44 @@ mod fund_fetcher {
                             }
                         });
 
-                        // Convert funds to string array for ComboBox
-                        let model_data: Vec<slint::SharedString> = value
+                        // Convert funds to FundItem models with rendered donut charts
+                        let model_data: Vec<FundItem> = value
                             .iter()
                             .map(|fund| {
-                                slint::SharedString::from(std::format!(
-                                    "{} (ID: {})",
-                                    fund.name,
-                                    fund.id
-                                ))
+                                let percent = if fund.target_value > 0.0 {
+                                    ((fund.collected_value / fund.target_value) * 100.0).round()
+                                        as i32
+                                } else {
+                                    0
+                                };
+
+                                let summary_text = std::format!(
+                                    "{} / {} {}",
+                                    funds::format_amount(fund.collected_value),
+                                    funds::format_amount(fund.target_value),
+                                    fund.target_currency
+                                );
+
+                                let donut = funds::render_donut_chart(
+                                    fund.target_value,
+                                    fund.collected_value,
+                                    &fund.donations,
+                                    240,
+                                    240,
+                                );
+
+                                FundItem {
+                                    id: fund.id,
+                                    name: slint::SharedString::from(fund.name.clone()),
+                                    target_value: fund.target_value.round() as i32,
+                                    collected_value: fund.collected_value.round() as i32,
+                                    target_currency: slint::SharedString::from(
+                                        fund.target_currency.clone(),
+                                    ),
+                                    percent,
+                                    summary_text: slint::SharedString::from(summary_text),
+                                    donut,
+                                }
                             })
                             .collect();
 
@@ -583,10 +611,9 @@ mod fund_fetcher {
                     }
                     Err(e) => {
                         error!("❌ Failed to fetch funds: {}", e);
-                        app.set_available_funds(slint::ModelRc::new(slint::VecModel::<
-                            slint::SharedString,
-                        >::default(
-                        )));
+                        app.set_available_funds(slint::ModelRc::new(
+                            slint::VecModel::<FundItem>::default(),
+                        ));
                         app.set_available_fund_ids(slint::ModelRc::new(
                             slint::VecModel::<i32>::default(),
                         ));
@@ -618,7 +645,7 @@ mod fund_fetcher {
                     }
                     Err(e) => {
                         error!("❌ Failed to fetch usernames: {}", e);
-                        app.set_available_funds(slint::ModelRc::new(slint::VecModel::<
+                        app.set_usernames(slint::ModelRc::new(slint::VecModel::<
                             slint::SharedString,
                         >::default(
                         )));
@@ -1312,6 +1339,34 @@ mod diagnostics_handler {
             health::save_maintenance_mode(
                 Path::new(health::DEFAULT_MAINTENANCE_STATE_PATH),
                 enabled,
+            );
+        });
+
+        app.on_diag_toggle_feature_space(move |enabled| {
+            info!(
+                "🛠️ Diagnostics: feature 'Space controls' {}",
+                if enabled { "enabled" } else { "disabled" }
+            );
+        });
+
+        app.on_diag_toggle_feature_games(move |enabled| {
+            info!(
+                "🛠️ Diagnostics: feature 'Play games' {}",
+                if enabled { "enabled" } else { "disabled" }
+            );
+        });
+
+        app.on_diag_toggle_feature_cat(move |enabled| {
+            info!(
+                "🛠️ Diagnostics: feature 'Print-a-cat' {}",
+                if enabled { "enabled" } else { "disabled" }
+            );
+        });
+
+        app.on_diag_toggle_feature_member(move |enabled| {
+            info!(
+                "🛠️ Diagnostics: feature 'Member controls' {}",
+                if enabled { "enabled" } else { "disabled" }
             );
         });
     }

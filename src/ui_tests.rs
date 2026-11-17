@@ -55,13 +55,13 @@ fn outage_blocks_payments_preserves_credit_and_keeps_diagnostics_accessible() {
         )
         .unwrap();
     }
-    tap(&app, 1050., 470.);
+    tap(&app, 490., 700.);
     assert_eq!(starts.get(), 0);
 
     app.invoke_acceptor_health_changed(true);
     assert!(!app.get_showing_technical_issue());
-    // The Play Games card in the main menu.
-    tap(&app, 1050., 470.);
+    // The Play Games card in the second row.
+    tap(&app, 490., 700.);
     assert!(app.get_on_insert_coins_page());
     assert_eq!(starts.get(), 1);
     app.set_session_amount(500);
@@ -177,8 +177,8 @@ fn cat_page_waits_for_print_completion_before_returning_home() {
         move || celebrations.set(celebrations.get() + 1)
     });
 
-    // Open Print-a-cat from the first card in the second row.
-    tap(&app, 275., 700.);
+    // Open Print-a-cat from the third card in the second row.
+    tap(&app, 785., 700.);
     let _ = app.window().take_snapshot();
     app.set_session_amount(100);
 
@@ -195,4 +195,37 @@ fn cat_page_waits_for_print_completion_before_returning_home() {
     assert_eq!(app.get_session_amount(), 0);
     assert_eq!(celebrations.get(), 1);
     assert!(!app.get_on_insert_money_page());
+}
+
+#[test]
+fn disabling_auxiliary_features_prevents_navigation_from_main() {
+    let adapter = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
+    slint::platform::set_platform(Box::new(TestPlatform(adapter.clone()))).unwrap();
+    let app = MainWindow::new().unwrap();
+    adapter.set_size(slint::PhysicalSize::new(1280, 1024));
+    app.show().unwrap();
+
+    app.invoke_acceptor_health_changed(true);
+    assert!(!app.get_showing_technical_issue());
+
+    // Disable Play Games feature toggle
+    app.set_feature_games_enabled(false);
+    let _ = app.window().take_snapshot();
+
+    // Tap Play Games card in the second row (x=490, y=700)
+    tap(&app, 490., 700.);
+    assert!(
+        !app.get_on_insert_coins_page(),
+        "clicking a disabled games card should not navigate to InsertCoins"
+    );
+
+    // Re-enable Play Games
+    app.set_feature_games_enabled(true);
+    let _ = app.window().take_snapshot();
+
+    tap(&app, 490., 700.);
+    assert!(
+        app.get_on_insert_coins_page(),
+        "clicking an enabled games card should navigate to InsertCoins"
+    );
 }
